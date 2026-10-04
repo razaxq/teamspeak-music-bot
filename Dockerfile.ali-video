@@ -1,0 +1,9 @@
+FROM tsmusicbot:ali-surround-20261004
+USER root
+WORKDIR /app
+RUN mkdir -p /opt/video-deps && npm install --prefix /opt/video-deps --ignore-scripts --omit=dev --no-audit --no-fund werift@0.24.4 && ln -s /opt/video-deps/node_modules/werift /app/node_modules/werift
+COPY dist/ /app/dist/
+COPY web/dist/ /app/web/dist/
+COPY scripts/patch-video-sdk.mjs /app/scripts/patch-video-sdk.mjs
+RUN node /app/scripts/patch-video-sdk.mjs
+LABEL local.teamspeak-music-bot.feature="native-video-prototype"

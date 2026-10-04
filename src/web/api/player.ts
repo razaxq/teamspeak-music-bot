@@ -37,6 +37,21 @@ export function createPlayerRouter(
     next();
   });
 
+  router.get("/:botId/video", (req, res) => { res.json({ video: (req as any).bot.getVideoStatus() }); });
+  router.post("/:botId/video", authorize({ capability: "player.control" }), async (req, res) => {
+    const { action, query } = req.body ?? {};
+    if (!["start", "stop", "pause", "resume"].includes(action) || (action === "start" && (typeof query !== "string" || query.length > 2048 || !/(?:^|\/)(BV[0-9A-Za-z]{10})(?:[/?#]|$)/.test(query)))) {
+      res.status(400).json({ error: "请输入有效的 Bilibili BV 链接" }); return;
+    }
+    try {
+      const bot = (req as any).bot;
+      if (action === "start") await bot.startVideo(query);
+      else if (action === "stop") await bot.stopVideo();
+      else bot.pauseVideo(action === "pause");
+      res.json({ video: bot.getVideoStatus() });
+    } catch (error) { res.status(409).json({ error: (error as Error).message }); }
+  });
+
   /** Map API platform string to the corresponding command flag. */
   const platformFlag = (platform: unknown): string => {
     if (platform === "bilibili") return "-b";

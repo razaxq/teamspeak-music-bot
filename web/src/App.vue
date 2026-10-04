@@ -1,6 +1,8 @@
 <template>
   <div class="app" :data-theme="theme">
     <Navbar />
+    <button v-if="can('player.control') && playerStore.activeBotId" class="video-launch" @click="showVideo = true">视频共享</button>
+    <VideoShare v-if="showVideo && can('player.control') && playerStore.activeBotId" :key="playerStore.activeBotId" @close="showVideo = false" />
     <main class="main-content">
       <RouterView />
     </main>
@@ -108,6 +110,7 @@ import Navbar from './components/Navbar.vue';
 import Player from './components/Player.vue';
 import Equalizer from './components/Equalizer.vue';
 import Surround from './components/Surround.vue';
+import VideoShare from './components/VideoShare.vue';
 import CoverArt from './components/CoverArt.vue';
 import Toast from './components/Toast.vue';
 import Queue from './components/Queue.vue';
@@ -115,8 +118,9 @@ import BilibiliPartModal from './components/BilibiliPartModal.vue';
 
 const showEqualizer = ref(false);
 const showSurround = ref(false);
+const showVideo = ref(false);
 const playerStore = usePlayerStore();
-watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; showSurround.value = false; });
+watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; showSurround.value = false; showVideo.value = false; });
 const session = useSession();
 const { can, guestCan } = session;
 // Mobile mini-player transport gating — mirrors components/Player.vue.
@@ -620,4 +624,9 @@ onUnmounted(() => {
     font-weight: 500;
   }
 }
+</style>
+
+<style>
+.video-launch{position:fixed;right:22px;bottom:100px;z-index:50;padding:10px 16px;border:1px solid #8885;border-radius:24px;background:var(--bg-primary,#171a21);color:var(--text-primary,#eee);box-shadow:0 4px 18px #0003;cursor:pointer;font-size:14px}
+@media(max-width:768px){.video-launch{bottom:155px;right:12px}}
 </style>

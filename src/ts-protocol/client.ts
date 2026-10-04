@@ -248,6 +248,11 @@ export class TS3Client extends EventEmitter {
       },
     });
 
+    // The pinned SDK patch exposes notifications already decoded by the client.
+    (this.client as TS3FullClient & { onRawNotification?: (value: {name:string;params:Record<string,string>}) => void }).onRawNotification = value => {
+      this.emit("rawNotification", value);
+    };
+
     this.client.on("textMessage", (msg: TextMessage) => {
       if (msg.invokerID === this.clientId) return;
       this.emit("textMessage", toTS3TextMessage(msg));

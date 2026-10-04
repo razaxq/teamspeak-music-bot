@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && npm run build:web",
+    "build": "tsc && node scripts/copy-video.mjs && npm run build:web",
     "build:web": "cd web && npm run build",
     "check:native": "node scripts/check-native.mjs",
     "prestart": "node scripts/check-native.mjs",
@@ -37,6 +37,7 @@
     "pino": "^10.3.1",
     "ts3-nodejs-library": "^3.5.1",
     "tweetnacl": "^1.0.3",
+    "werift": "0.24.4",
     "ws": "^8.20.0",
     "yt-dlp-wrap": "^2.3.12"
   },

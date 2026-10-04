@@ -1,3 +1,4 @@
+import { VideoSession } from "../video/runtime.mjs";
 import { parseSurround, type SurroundSettings } from "../audio/surround.js";
 import { parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
 import { EventEmitter } from "node:events";
@@ -185,6 +186,7 @@ export class BotInstance extends EventEmitter {
   private config: BotConfig;
   private logger: Logger;
   private avatarStore: AvatarStore;
+  private videoSession: VideoSession | null = null;
   private connected = false;
   private disconnectEmitted = false;
   private voteSkipUsers = new Set<string>();
@@ -340,7 +342,7 @@ export class BotInstance extends EventEmitter {
 
   private setupPlayerEvents(): void {
     this.player.on("frame", (opusFrame: Buffer) => {
-      this.tsClient.sendVoiceData(opusFrame);
+      if (!this.videoSession?.active) this.tsClient.sendVoiceData(opusFrame);
     });
 
     this.player.on("trackEnd", () => {
@@ -414,6 +416,7 @@ export class BotInstance extends EventEmitter {
     });
 
     this.tsClient.on("disconnected", () => {
+      void this.videoSession?.stop();
       // Always reset local state — covers the case where connect() never
       // completed (hanging handshake → 60s library idle timeout) and
       // this.connected was never flipped to true. Previously this handler
@@ -480,6 +483,7 @@ export class BotInstance extends EventEmitter {
     });
     this.tsClient.on("clientMoved", (event: { id: number; targetChannelID: bigint }) => {
       if (event.id === this.tsClient.getClientId()) {
+        void this.videoSession?.stop();
         // Moving the bot invalidates every activity deadline from its old
         // channel even if no individual leave events arrive.
         this.voiceDucking.reset(false);
@@ -601,6 +605,7 @@ export class BotInstance extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
+    await this.videoSession?.stop();
     this._cancelIdleTimer();
     this.voiceDucking.reset(true);
     // Cancel any pending live-queue snapshot before clearing so it can't fire
@@ -853,6 +858,9 @@ export class BotInstance extends EventEmitter {
     if (!this.connected && AUDIO_COMMANDS.has(cmd.name)) {
       throw new Error("Bot is not connected to TeamSpeak");
     }
+    if (this.videoSession?.active && ["play", "resume", "stop", "next", "skip", "prev", "playlist", "album", "fm", "artist", "move", "follow"].includes(cmd.name)) {
+      await this.videoSession.stop();
+    }
     switch (cmd.name) {
       case "search":
       case "find":
@@ -982,6 +990,7 @@ export class BotInstance extends EventEmitter {
 
   /** Resolve URL for a song and start playing it. Skips to next if URL fails. */
   async resolveAndPlay(song: QueuedSong): Promise<boolean> {
+    await this.videoSession?.stop();
     if (!this.connected) {
       this.logger.warn({ songId: song.id, name: song.name }, "resolveAndPlay called on disconnected bot — skipping");
       return false;
@@ -2034,6 +2043,30 @@ export class BotInstance extends EventEmitter {
     return next;
   }
 
+  getVideoStatus() {
+    return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", state: "idle", title: "", viewers: 0, error: "" };
+  }
+
+  async startVideo(query: string): Promise<void> {
+    if (!this.connected) throw new Error("机器人尚未连接 TeamSpeak");
+    if (!this.videoSession) this.videoSession = new VideoSession(this.tsClient, {changed: () => this.emit("stateChange")});
+    if (this.videoSession.active) throw new Error("请先停止当前视频");
+    if (process.env.TS_VIDEO_ENABLED !== "1") throw new Error("视频功能未启用");
+    const wasPlaying = this.player.getState() === "playing";
+    this.cmdPause();
+    try { await this.videoSession.start(query); }
+    catch (error) {
+      if (wasPlaying && this.connected && !this.videoSession.active && this.player.getState() === "paused") this.cmdResume();
+      throw error;
+    }
+  }
+
+  async stopVideo(): Promise<void> { await this.videoSession?.stop(); }
+  pauseVideo(paused: boolean): void {
+    if (!this.videoSession) throw new Error("当前没有视频共享");
+    this.videoSession.pause(paused);
+  }
+
   getStatus(): BotStatus {
     return {
       id: this.id,
@@ -2090,6 +2123,7 @@ export class BotInstance extends EventEmitter {
    * and collide with the running stream), otherwise to the URL player.
    */
   seek(seconds: number): void {
+    if (this.videoSession?.active) throw new Error("请先停止视频共享再调整音乐进度");
     if (this.queue.current()?.platform === "spotify") {
       // The web route + AudioPlayer.seek are seconds-based, but
       // SpotifyController.seek expects milliseconds — convert here.

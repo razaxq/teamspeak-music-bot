@@ -47,6 +47,8 @@ export class MediaSource {
     this.process=spawn('ffmpeg',['-hide_banner','-loglevel','error',...inputs,
       '-map','0:v:0','-an','-vf',`scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2,fps=${profile.fps}`,
       '-c:v','libvpx','-deadline','realtime','-cpu-used','8','-threads','1','-b:v',`${profile.kbps}k`,'-g',String(profile.fps),
+      // Bound keyframe bursts while retaining the existing resolution and cadence.
+      '-lag-in-frames','0','-max-intra-rate','300','-minrate',`${profile.kbps}k`,'-maxrate',`${profile.kbps}k`,'-bufsize',`${profile.kbps*2}k`,
       '-payload_type','96','-f','rtp',`rtp://127.0.0.1:${ports[0]}?pkt_size=1100`,
       '-map','1:a:0','-vn','-ac','2','-ar','48000','-c:a','libopus','-b:a','96k','-frame_duration','20',
       '-payload_type','111','-f','rtp',`rtp://127.0.0.1:${ports[1]}?pkt_size=1100`],{stdio:['ignore','ignore','pipe']});

@@ -114,6 +114,8 @@ export class TS3Client extends EventEmitter {
   >();
   private logger: Logger;
   private disconnecting = false;
+  /** Join an existing teardown before reusing the same TeamSpeak identity. */
+  private disconnectPromise: Promise<void> | null = null;
   private detectedProtocol: ServerProtocol = "unknown";
   private httpQuery: TS6HttpQuery | null = null;
   private udpErrorTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,16 +146,10 @@ export class TS3Client extends EventEmitter {
   async connect(): Promise<void> {
     this.voiceEndpointResolver.reset();
     this.clearVisibleClientUids();
-    // Clean up any existing connection before creating a new one
-    if (this.client) {
-      this.logger.info("Cleaning up previous connection before reconnecting");
-      try {
-        await this.client.disconnect();
-      } catch {
-        // Ignore errors during cleanup
-      }
-      this.client = null;
-      this.clientId = 0;
+    // Preserve the teardown serialization already deployed on Ali.
+    if (this.client || this.disconnectPromise) {
+      this.logger.info("Waiting for previous connection teardown before reconnecting");
+      await this.disconnect();
     }
 
     const addr = `${this.options.host}:${this.options.port}`;
@@ -204,7 +200,7 @@ export class TS3Client extends EventEmitter {
       this.logger.warn("connect() called while already connected, disconnecting first");
       const savedProtocol = this.detectedProtocol;
       const savedHttpQuery = this.httpQuery;
-      this.disconnect();
+      await this.disconnect();
       this.detectedProtocol = savedProtocol;
       this.httpQuery = savedHttpQuery;
       // Give the old client a moment to tear down
@@ -523,25 +519,35 @@ export class TS3Client extends EventEmitter {
     this.visibleClientUids.clear();
   }
 
-  disconnect(): void {
-    if (this.client && !this.disconnecting) {
-      this.disconnecting = true;
-      const client = this.client;
-      client.disconnect().catch(() => {}).finally(() => {
+  async disconnect(): Promise<void> {
+    if (this.disconnectPromise) {
+      await this.disconnectPromise;
+      return;
+    }
+    const client = this.client;
+    this.disconnecting = true;
+    this.disconnectPromise = (async () => {
+      try {
+        if (client) await client.disconnect();
+      } catch {
+        // Best-effort teardown; still clear local state.
+      } finally {
         if (this.client === client) {
           this.client = null;
         }
+        this.clientId = 0;
+        this.clearVisibleClientUids();
+        this.httpQuery = null;
+        this.detectedProtocol = "unknown";
+        if (this.udpErrorTimer) {
+          clearTimeout(this.udpErrorTimer);
+          this.udpErrorTimer = null;
+        }
         this.disconnecting = false;
-      });
-    }
-    this.clientId = 0;
-    this.clearVisibleClientUids();
-    this.httpQuery = null;
-    this.detectedProtocol = "unknown";
-    if (this.udpErrorTimer) {
-      clearTimeout(this.udpErrorTimer);
-      this.udpErrorTimer = null;
-    }
-    this.logger.info("Disconnected from TeamSpeak server");
+        this.disconnectPromise = null;
+        this.logger.info("Disconnected from TeamSpeak server");
+      }
+    })();
+    await this.disconnectPromise;
   }
 }

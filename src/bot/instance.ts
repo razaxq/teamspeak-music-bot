@@ -592,7 +592,7 @@ export class BotInstance extends EventEmitter {
     void this.restoreQueueFromSnapshot();
   }
 
-  disconnect(): void {
+  async disconnect(): Promise<void> {
     this._cancelIdleTimer();
     this.voiceDucking.reset(true);
     // Cancel any pending live-queue snapshot before clearing so it can't fire
@@ -614,11 +614,12 @@ export class BotInstance extends EventEmitter {
       this.disconnectEmitted = true;
       this.emit("disconnected");
     }
-    this.tsClient.disconnect();
+    const tsDisconnect = this.tsClient.disconnect();
     // Stop outbound PCM and initiate the TeamSpeak disconnect before removing
     // our id from the shared registry, minimizing the window in which another
     // managed bot could mistake our final packet for a human speaker.
     this.unregisterManagedVoiceClient(MANAGED_VOICE_CLIENT_RELEASE_GRACE_MS);
+    await tsDisconnect;
   }
 
   /** 外部更新 idleTimeoutMinutes（由 API 保存时调用） */

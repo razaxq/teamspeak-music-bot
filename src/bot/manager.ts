@@ -271,7 +271,7 @@ export class BotManager extends EventEmitter {
     //      disconnect call is a cheap no-op here.
     // Calling disconnect() is idempotent (disconnectEmitted guards event
     // emission), so this is safe in all states.
-    oldBot.disconnect();
+    await oldBot.disconnect();
 
     // Reload config from database so updated settings (channel, nickname, etc.) take effect
     const saved = this.database.getBotInstances().find((i) => i.id === id);

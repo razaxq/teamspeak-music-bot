@@ -166,6 +166,7 @@ export const usePlayerStore = defineStore('player', {
 
     // Transient notification for surfacing failures (e.g., "song not playable")
     // to a global Toast. Bumped `id` triggers re-render of the same message.
+    videoRequest: null as { query: string } | null,
     notification: null as { id: number; message: string; type: 'error' | 'info' } | null,
 
     // Bilibili 多P分P选择弹窗状态
@@ -446,6 +447,11 @@ export const usePlayerStore = defineStore('player', {
       await axios.post(`/api/player/${this.activeBotId}/play-by-id`, { songId, platform });
       this._setTiming(this.activeBotId, { serverElapsed: 0 });
       this._syncAfterAction();
+    },
+
+    openVideo(song?: Song) {
+      if (!this.activeBotId || !useSession().can('player.control')) return;
+      this.videoRequest = { query: song?.platform === 'bilibili' ? song.id : '' };
     },
 
     notify(message: string, type: 'error' | 'info' = 'info') {

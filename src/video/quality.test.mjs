@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveVideo} from './bilibili.mjs';
+import {resolveVideo,parseVideo} from './bilibili.mjs';
 import {videoProfile} from './media.mjs';
 test('authenticated resolver confines cookie to Bilibili API and chooses allowed source quality',async()=>{
  const original=globalThis.fetch,calls=[];
@@ -19,4 +19,10 @@ test('source quality fallback does not upscale or allow arbitrary encoder sizes'
  assert.deepEqual(videoProfile(720,1080),{height:720,width:1280,fps:20,kbps:1600});
  assert.equal(videoProfile(1080,1080).fps,15);
  assert.throws(()=>videoProfile(4320,4320));
+});
+
+test('video selection preserves multipart IDs from music search results',()=>{
+ assert.deepEqual(parseVideo('BV1KN411N7sG?p=2'),{bvid:'BV1KN411N7sG',page:2});
+ assert.deepEqual(parseVideo('https://www.bilibili.com/video/BV1KN411N7sG/?p=3'),{bvid:'BV1KN411N7sG',page:3});
+ assert.throws(()=>parseVideo('BV1KN411N7sG?p=0'));
 });

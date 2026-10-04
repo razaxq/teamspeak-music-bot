@@ -7,7 +7,7 @@
     </div>
 
     <!-- Now Playing -->
-    <section v-if="store.currentSong" class="section">
+    <section v-if="store.currentSong && (!store.activeBot?.video || store.activeBot.video.state === 'idle')" class="section">
       <h2 class="section-title">正在播放</h2>
       <div class="now-playing">
         <CoverArt :url="store.currentSong.coverUrl" :size="80" :radius="10" :show-shadow="true" />

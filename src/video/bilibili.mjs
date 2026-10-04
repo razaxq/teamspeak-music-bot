@@ -2,7 +2,8 @@ export function parseVideo(value) {
   const match=String(value).match(/(?:^|\/)(BV[0-9A-Za-z]{10})(?:[/?#]|$)/);
   if(!match)throw new Error('Use a Bilibili BV video link');
   let page=1;
-  if(String(value).startsWith('https://'))page=Number(new URL(value).searchParams.get('p')||1);
+  const url = new URL(String(value), 'https://www.bilibili.com/video/');
+  page=Number(url.searchParams.get('p')||1);
   if(!Number.isInteger(page)||page<1||page>1000)throw new Error('Invalid video page');
   return {bvid:match[1],page};
 }

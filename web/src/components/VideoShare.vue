@@ -1,7 +1,7 @@
 <template>
   <dialog ref="dialog" class="video-dialog" @cancel.prevent="$emit('close')">
     <header><h2>在 TeamSpeak 播放视频</h2><button aria-label="关闭视频设置" @click="$emit('close')">×</button></header>
-    <p>粘贴 Bilibili 链接，随后在 TS6 中点击机器人的屏幕共享观看。</p>
+    <p>确认 Bilibili 链接并点击“开始共享”，随后在 TS6 中点击机器人的屏幕共享观看。</p>
     <label>Bilibili 视频链接<input v-model="query" placeholder="https://www.bilibili.com/video/BV…" :disabled="busy || active" /></label>
     <label>输出清晰度<select v-model.number="height" :disabled="busy || active"><option :value="360">360p · 省流量</option><option :value="480">480p</option><option :value="720">720p / 20fps · 推荐</option><option :value="1080">1080p / 15fps · 更清晰</option></select></label>
     <p v-if="video.resolution" class="hint">实际输出 {{ video.resolution }}</p>
@@ -22,9 +22,10 @@ import {ref,computed,onMounted,onUnmounted} from 'vue';
 import axios from 'axios';
 import {usePlayerStore} from '../stores/player.js';
 defineEmits<{close:[]}>();
+const props=defineProps<{initialQuery?:string}>();
 const store=usePlayerStore(),botId=store.activeBotId!;
 const song=store.activeBot?.currentSong;
-const query=ref(song?.platform==='bilibili'?song.id:'');
+const query=ref(props.initialQuery || (song?.platform==='bilibili'?song.id:''));
 const height=ref(720);
 const video=ref({resolution:null as string|null,enabled:false,state:'idle',title:'',viewers:0,error:''});
 const active=computed(()=>video.value.state!=='idle');
@@ -32,13 +33,13 @@ const busy=ref(false),error=ref(''),dialog=ref<HTMLDialogElement>();
 const labels:Record<string,string>={idle:'尚未共享',loading:'正在准备视频',playing:'共享中',paused:'视频已暂停'};
 let disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
 async function load(){
-  try{const {data}=await axios.get(`/api/player/${botId}/video`);if(!disposed)video.value=data.video;}
+  try{const {data}=await axios.get(`/api/player/${botId}/video`);if(!disposed){video.value=data.video;const bot=store.bots.find(b=>b.id===botId);if(bot)bot.video=data.video;}}
   catch{if(!disposed)error.value='无法读取视频状态';}
   finally{if(!disposed)timer=setTimeout(load,2000);}
 }
 async function control(action:string){
   busy.value=true;error.value='';
-  try{const {data}=await axios.post(`/api/player/${botId}/video`,{action,query:query.value.trim(),height:height.value});if(!disposed)video.value=data.video;}
+  try{const {data}=await axios.post(`/api/player/${botId}/video`,{action,query:query.value.trim(),height:height.value});if(!disposed){video.value=data.video;const bot=store.bots.find(b=>b.id===botId);if(bot)bot.video=data.video;}}
   catch(e:any){if(!disposed)error.value=e.response?.data?.error||'操作失败，请重试';}
   finally{if(!disposed)busy.value=false;}
 }

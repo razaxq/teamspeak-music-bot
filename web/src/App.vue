@@ -1,8 +1,8 @@
 <template>
   <div class="app" :data-theme="theme">
     <Navbar />
-    <button v-if="can('player.control') && playerStore.activeBotId" class="video-launch" @click="showVideo = true">视频共享</button>
-    <VideoShare v-if="showVideo && can('player.control') && playerStore.activeBotId" :key="playerStore.activeBotId" @close="showVideo = false" />
+    <button v-if="can('player.control') && playerStore.activeBotId" class="video-launch" @click="playerStore.openVideo()">视频共享</button>
+    <VideoShare v-if="showVideo && can('player.control') && playerStore.activeBotId" :key="playerStore.activeBotId" :initial-query="videoQuery" @close="showVideo = false" />
     <main class="main-content">
       <section v-if="playerStore.activeBot?.video && playerStore.activeBot.video.state !== 'idle'" class="video-status-card" aria-label="当前视频">
         <div><strong>{{ playerStore.activeBot.video.state === 'paused' ? '视频已暂停' : playerStore.activeBot.video.state === 'loading' ? '正在准备视频' : '正在共享视频' }}</strong>
@@ -12,7 +12,7 @@
       </section>
       <RouterView />
     </main>
-    <Player @equalizer="showEqualizer = true" @surround="showSurround = true" />
+    <Player v-if="!videoActive" @equalizer="showEqualizer = true" @surround="showSurround = true" />
     <Surround v-if="showSurround && canTransport && playerStore.activeBotId"
       :key="playerStore.activeBotId" @close="showSurround = false" />
     <Equalizer v-if="showEqualizer && canTransport && playerStore.activeBotId"
@@ -22,7 +22,7 @@
     <BilibiliPartModal />
 
     <!-- Mobile mini player -->
-    <div v-if="currentSong" class="m-player" @click="onPlayerRowClick">
+    <div v-if="currentSong && !videoActive" class="m-player" @click="onPlayerRowClick">
       <div
         ref="seekBarRef"
         class="m-player-progress"
@@ -43,6 +43,7 @@
         <div class="m-player-artist">{{ currentSong.artist }}</div>
       </div>
       <div class="m-player-controls" @click.stop>
+        <button v-if="can('player.control') && currentSong.platform === 'bilibili'" class="m-player-btn" aria-label="播放视频" @click="playerStore.openVideo(currentSong)"><Icon icon="mdi:video" /></button>
         <button v-if="can('player.control')" class="m-player-btn" @click="playerStore.prev()">
           <Icon icon="mdi:skip-previous" />
         </button>
@@ -126,7 +127,10 @@ const showEqualizer = ref(false);
 const showSurround = ref(false);
 const showVideo = ref(false);
 const playerStore = usePlayerStore();
-watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; showSurround.value = false; showVideo.value = false; });
+const videoQuery = ref('');
+const videoActive = computed(() => !!playerStore.activeBot?.video && playerStore.activeBot.video.state !== 'idle');
+watch(() => playerStore.videoRequest, request => { if (request) { videoQuery.value = request.query; showVideo.value = true; } });
+watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; showSurround.value = false; showVideo.value = false; videoQuery.value = ''; });
 const session = useSession();
 const { can, guestCan } = session;
 // Mobile mini-player transport gating — mirrors components/Player.vue.

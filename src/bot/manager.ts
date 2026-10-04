@@ -414,10 +414,9 @@ export class BotManager extends EventEmitter {
     }
   }
 
-  shutdown(): void {
-    for (const bot of this.bots.values()) {
-      bot.disconnect();
-    }
+  async shutdown(): Promise<void> {
+    const pending = [...this.bots.values()].map((bot) => bot.disconnect());
+    await Promise.allSettled(pending);
     this.bots.clear();
   }
 }

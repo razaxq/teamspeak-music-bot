@@ -173,13 +173,27 @@ async function main() {
     `WebUI: ${publicUrl || `http://localhost:${config.webPort}`}`
   );
 
-  const shutdown = () => {
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info("Shutting down...");
-    botManager.shutdown();
-    webServer.stop();
-    apiServer.stop();
-    db.close();
-    process.exit(0);
+    const deadline = setTimeout(() => {
+      logger.error("Graceful shutdown timed out");
+      process.exit(1);
+    }, 8000);
+    deadline.unref();
+    try {
+      webServer.stop();
+      await botManager.shutdown();
+      apiServer.stop();
+      db.close();
+      clearTimeout(deadline);
+      process.exit(0);
+    } catch (err) {
+      logger.error({ err }, "Graceful shutdown failed");
+      process.exit(1);
+    }
   };
 
   process.on("SIGINT", shutdown);

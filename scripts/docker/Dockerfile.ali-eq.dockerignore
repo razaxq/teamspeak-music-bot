@@ -1,0 +1,9 @@
+**
+!dist/
+!dist/**
+!web/
+!web/dist/
+!web/dist/**
+!scripts/
+!scripts/docker/
+!scripts/docker/Dockerfile.ali-eq

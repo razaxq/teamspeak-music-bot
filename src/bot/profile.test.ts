@@ -21,6 +21,8 @@ function makeMockTs(): TS3Client & {
       calls.push(Buffer.concat(chunks));
     }),
     fileTransferDeleteFile: vi.fn().mockResolvedValue(undefined),
+    // The TS6 profile fix awaits command responses; keep recording both paths.
+    execCommand: vi.fn().mockImplementation(async (cmd: string) => ts.sendCommandNoWait(cmd)),
     sendCommandNoWait: vi.fn().mockImplementation(async (cmd: string) => {
       if (/client_flag_avatar=$/.test(cmd)) clears++;
     }),

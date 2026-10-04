@@ -60,6 +60,9 @@
       <div class="player-right">
         <!-- Volume gated on transport -->
         <template v-if="canTransport">
+          <button class="control-btn" title="均衡器 EQ" aria-label="均衡器 EQ" @click="$emit('equalizer')">
+            <Icon icon="mdi:tune-vertical" />
+          </button>
           <Icon icon="mdi:volume-high" class="volume-icon" />
           <input
             type="range"
@@ -94,6 +97,8 @@ import { useSession } from '../composables/useSession.js';
 import { useDecoupledSlider } from '../composables/useDecoupledSlider.js';
 import CoverArt from './CoverArt.vue';
 import Queue from './Queue.vue';
+
+defineEmits<{ equalizer: [] }>();
 
 const route = useRoute();
 const router = useRouter();

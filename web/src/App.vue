@@ -4,7 +4,9 @@
     <main class="main-content">
       <RouterView />
     </main>
-    <Player />
+    <Player @equalizer="showEqualizer = true" />
+    <Equalizer v-if="showEqualizer && canTransport && playerStore.activeBotId"
+      :key="playerStore.activeBotId" @close="showEqualizer = false" />
     <Toast />
     <Queue class="mobile-queue" :open="mobileQueueOpen" @close="mobileQueueOpen = false" />
     <BilibiliPartModal />
@@ -65,6 +67,7 @@
           @blur="onMobileVolumeRelease"
         />
         <span class="m-volume-value">{{ mobileVolumeDisplay }}</span>
+        <button aria-label="均衡器 EQ" @click="showEqualizer = true; mobileVolumeOpen = false">EQ</button>
       </div>
     </div>
 
@@ -100,12 +103,15 @@ import { useWebSocket } from './composables/useWebSocket.js';
 import { useSession } from './composables/useSession.js';
 import Navbar from './components/Navbar.vue';
 import Player from './components/Player.vue';
+import Equalizer from './components/Equalizer.vue';
 import CoverArt from './components/CoverArt.vue';
 import Toast from './components/Toast.vue';
 import Queue from './components/Queue.vue';
 import BilibiliPartModal from './components/BilibiliPartModal.vue';
 
+const showEqualizer = ref(false);
 const playerStore = usePlayerStore();
+watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; });
 const session = useSession();
 const { can, guestCan } = session;
 // Mobile mini-player transport gating — mirrors components/Player.vue.

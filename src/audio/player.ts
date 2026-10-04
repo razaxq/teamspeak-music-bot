@@ -5,6 +5,7 @@ import { accessSync, chmodSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createOpusEncoder, PCM_FRAME_BYTES, type Encoder } from "./encoder.js";
+import { PcmEqualizer, type EqualizerSettings } from "./equalizer.js";
 import type { Readable } from "node:stream";
 import type { Logger } from "../logger.js";
 
@@ -163,6 +164,7 @@ export class AudioPlayer extends EventEmitter {
   private encoder: Encoder;
   private state: PlayerState = "idle";
   private volume = 75;
+  private equalizer = new PcmEqualizer();
   /**
    * A transient gain envelope layered on top of the persisted user volume.
    * Voice ducking drives this value; keeping it separate means a temporary
@@ -530,6 +532,7 @@ export class AudioPlayer extends EventEmitter {
   }
 
   stop(): void {
+    this.equalizer.reset();
     // 3. 递增 ID 是最有效的逻辑“隔离墙”
     this.sessionId++; 
     this.frameLoopRunning = false;
@@ -750,6 +753,10 @@ export class AudioPlayer extends EventEmitter {
     const startFactor = baseFactor * startDuckingGain;
     const endFactor = baseFactor * endDuckingGain;
 
+    if (this.equalizer.isActive()) {
+      return this.equalizer.process(pcm, startFactor, endFactor);
+    }
+
     if (startFactor >= 1 && endFactor >= 1) {
       return Buffer.from(pcm);
     }
@@ -810,6 +817,8 @@ export class AudioPlayer extends EventEmitter {
   resetFailures(): void { this.consecutiveFailures = 0; }
   setVolume(vol: number): void { this.volume = Math.max(0, Math.min(100, vol)); }
   getVolume(): number { return this.volume; }
+  setEqualizer(settings: EqualizerSettings): void { this.equalizer.setSettings(settings); }
+  getEqualizer(): EqualizerSettings { return this.equalizer.getSettings(); }
   /** Set the temporary voice-ducking gain (0=silent, 1=unchanged). */
   setDuckingGain(gain: number, rampMs = 0): void {
     if (!Number.isFinite(gain)) return;

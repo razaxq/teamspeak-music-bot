@@ -1,3 +1,4 @@
+import { parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
 import { EventEmitter } from "node:events";
 import {
   TS3Client,
@@ -147,6 +148,7 @@ export interface BotStatus {
   currentSong: QueuedSong | null;
   queueSize: number;
   volume: number;
+  equalizer: EqualizerSettings;
   playMode: PlayMode;
   elapsed: number; // ground truth elapsed seconds from frame count
   /** 当前曲实际播放时长（秒）。试听片段=试听秒数；完整曲=duration。缺失时前端回退 currentSong.duration。 */
@@ -249,6 +251,12 @@ export class BotInstance extends EventEmitter {
       if (restoredMode) this.queue.setMode(restoredMode);
     } catch (err) {
       this.logger.warn({ err }, "Failed to restore player settings — using defaults");
+    }
+
+    try {
+      this.player.setEqualizer(this.database.getEqualizer(this.id));
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to restore equalizer — using defaults");
     }
 
     // Structural typing (like localProvider.sweepUnreferenced): only the real
@@ -2027,10 +2035,20 @@ export class BotInstance extends EventEmitter {
       currentSong: this.queue.current(),
       queueSize: this.queue.size(),
       volume: this.player.getVolume(),
+      equalizer: this.player.getEqualizer(),
       playMode: this.queue.getMode(),
       elapsed: this.player.getElapsed(),
       effectiveDuration: this.effectiveDuration,
     };
+  }
+
+  setEqualizer(value: EqualizerSettings): EqualizerSettings {
+    const settings = parseEqualizer(value);
+    // Persist first: a failed write must not pretend the setting was saved.
+    this.database.saveEqualizer(this.id, settings);
+    this.player.setEqualizer(settings);
+    this.emit("stateChange");
+    return this.player.getEqualizer();
   }
 
   getQueue(): QueuedSong[] {

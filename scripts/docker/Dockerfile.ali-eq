@@ -1,0 +1,5 @@
+FROM tsmusicbot:before-eq-20261004
+COPY dist/ /app/dist/
+COPY web/dist/ /app/web/dist/
+LABEL local.teamspeak-music-bot.feature="10-band-equalizer"
+LABEL local.teamspeak-music-bot.base-revision="af4ca56fd3c6252e6ef1a4a6bd82983691cadc10"

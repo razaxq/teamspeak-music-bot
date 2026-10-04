@@ -44,6 +44,12 @@ export interface AlbumItem {
   platform: string;
 }
 
+export interface EqualizerSettings {
+  enabled: boolean;
+  preamp: number;
+  gains: number[];
+}
+
 export interface BotStatus {
   id: string;
   name: string;
@@ -53,6 +59,7 @@ export interface BotStatus {
   currentSong: Song | null;
   queueSize: number;
   volume: number;
+  equalizer?: EqualizerSettings;
   playMode: string;
   elapsed?: number;
 }
@@ -640,6 +647,13 @@ export const usePlayerStore = defineStore('player', {
       await axios.post(`/api/player/${this.activeBotId}/volume`, { volume });
       const bot = this.bots.find((b) => b.id === this.activeBotId);
       if (bot) bot.volume = volume;
+    },
+
+    async setEqualizer(botId: string, settings: EqualizerSettings): Promise<EqualizerSettings> {
+      const { data } = await axios.post(`/api/player/${botId}/equalizer`, settings);
+      const bot = this.bots.find(b => b.id === botId);
+      if (bot) bot.equalizer = data.equalizer;
+      return data.equalizer;
     },
 
     async setMode(mode: string) {

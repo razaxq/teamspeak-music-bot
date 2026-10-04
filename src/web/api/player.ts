@@ -1,3 +1,4 @@
+import { EQ_FREQUENCIES, parseEqualizer, type EqualizerSettings } from "../../audio/equalizer.js";
 import { Router } from "express";
 import type { BotManager } from "../../bot/manager.js";
 import type { BotDatabase } from "../../data/database.js";
@@ -174,6 +175,25 @@ export function createPlayerRouter(
       res.json({ message: response });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  router.get("/:botId/equalizer", (req, res) => {
+    res.json({ frequencies: EQ_FREQUENCIES, equalizer: (req as any).bot.getPlayer().getEqualizer() });
+  });
+
+  router.post("/:botId/equalizer", authorize({ capability: "player.control", guestFlag: "transport" }), (req, res) => {
+    let settings: EqualizerSettings;
+    try { settings = parseEqualizer(req.body); }
+    catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
+    try {
+      res.json({ equalizer: (req as any).bot.setEqualizer(settings) });
+    } catch (err) {
+      logger.error({ err }, "Failed to save equalizer");
+      res.status(500).json({ error: "Failed to save equalizer" });
     }
   });
 

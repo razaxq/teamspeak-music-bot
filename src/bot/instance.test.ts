@@ -1,3 +1,4 @@
+import { defaultEqualizer } from "../audio/equalizer.js";
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { BotInstance, COMMAND_DENIED_MESSAGE, spotifyPortsForBotId } from "./instance.js";
@@ -1181,9 +1182,12 @@ describe("BotInstance — restores persisted player settings on construction (#1
     });
     db.saveVolume("bot-restore", 33);
     db.savePlayMode("bot-restore", "loop");
+    const eq = { ...defaultEqualizer(), enabled: true, preamp: -6 };
+    db.saveEqualizer("bot-restore", eq);
 
     const bot = new BotInstance(makeOptions("bot-restore", db));
     const status = bot.getStatus();
+    expect(status.equalizer).toEqual(eq);
     expect(status.volume).toBe(33);
     expect(status.playMode).toBe("loop");
     db.close();
@@ -1193,6 +1197,7 @@ describe("BotInstance — restores persisted player settings on construction (#1
     const db = createDatabase(":memory:");
     const bot = new BotInstance(makeOptions("brand-new", db));
     const status = bot.getStatus();
+    expect(status.equalizer).toEqual(defaultEqualizer());
     expect(status.volume).toBe(75);
     expect(status.playMode).toBe("seq");
     db.close();
@@ -1655,5 +1660,25 @@ describe("cmdPlaylist with a playlist link (#160)", () => {
     const ctx = makeCtx();
     await cmdPlaylist.call(ctx, cmd("2829883282"));
     expect(ctx.providers.netease.getPlaylistSongs).toHaveBeenCalledWith("2829883282");
+  });
+});
+
+
+describe("BotInstance.setEqualizer", () => {
+  it("persists, applies and broadcasts; failed persistence leaves playback untouched", () => {
+    const settings = { ...defaultEqualizer(), enabled: true };
+    const context: any = {
+      id: "eq-bot", database: { saveEqualizer: vi.fn() },
+      player: { setEqualizer: vi.fn(), getEqualizer: () => settings }, emit: vi.fn(),
+    };
+    expect(BotInstance.prototype.setEqualizer.call(context, settings)).toEqual(settings);
+    expect(context.database.saveEqualizer).toHaveBeenCalledWith("eq-bot", settings);
+    expect(context.player.setEqualizer).toHaveBeenCalledWith(settings);
+    expect(context.emit).toHaveBeenCalledWith("stateChange");
+    context.player.setEqualizer.mockClear(); context.emit.mockClear();
+    context.database.saveEqualizer.mockImplementation(() => { throw new Error("disk full"); });
+    expect(() => BotInstance.prototype.setEqualizer.call(context, settings)).toThrow("disk full");
+    expect(context.player.setEqualizer).not.toHaveBeenCalled();
+    expect(context.emit).not.toHaveBeenCalled();
   });
 });

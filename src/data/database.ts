@@ -1,3 +1,4 @@
+import { defaultEqualizer, parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
 import Database from "better-sqlite3";
 import { CAPABILITIES, BOTS_ALL } from "./permissions.js";
 import { GUEST_USER_ID, GUEST_USERNAME } from "./users.js";
@@ -136,6 +137,8 @@ export interface BotDatabase {
   getProfileConfig(botId: string): ProfileConfig;
   saveProfileConfig(botId: string, config: ProfileConfig): void;
   getPlayerSettings(botId: string): PlayerSettings;
+  getEqualizer(botId: string): EqualizerSettings;
+  saveEqualizer(botId: string, settings: EqualizerSettings): void;
   saveVolume(botId: string, volume: number): void;
   savePlayMode(botId: string, playMode: string): void;
   getCustomAvatarPath(botId: string): string | null;
@@ -203,6 +206,10 @@ function migrateSchema(db: Database.Database): void {
   }
   if (!names.includes("play_mode")) {
     db.exec("ALTER TABLE bot_instances ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'seq'");
+  }
+
+  if (!names.includes("equalizer")) {
+    db.exec("ALTER TABLE bot_instances ADD COLUMN equalizer TEXT");
   }
 
   const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
@@ -621,6 +628,20 @@ export function createDatabase(dbPath: string): BotDatabase {
           ? row.play_mode
           : DEFAULT_PLAYER_SETTINGS.playMode;
       return { volume, playMode };
+    },
+
+    getEqualizer(botId) {
+      const row = db.prepare("SELECT equalizer FROM bot_instances WHERE id = ?").get(botId) as
+        { equalizer: string | null } | undefined;
+      try { return parseEqualizer(JSON.parse(row?.equalizer ?? "null")); }
+      catch { return defaultEqualizer(); }
+    },
+
+    saveEqualizer(botId, settings) {
+      const validated = parseEqualizer(settings);
+      const result = db.prepare("UPDATE bot_instances SET equalizer = ? WHERE id = ?")
+        .run(JSON.stringify(validated), botId);
+      if (!result.changes) throw new Error("Bot not found");
     },
 
     saveVolume(botId, volume) {

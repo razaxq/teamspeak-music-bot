@@ -1,3 +1,4 @@
+import { defaultEqualizer } from "../audio/equalizer.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -212,9 +213,41 @@ describe("database", () => {
     const cols = (reopened.db.prepare("PRAGMA table_info(bot_instances)").all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols).toContain("volume");
     expect(cols).toContain("play_mode");
+    expect(cols).toContain("equalizer");
+    expect(reopened.getEqualizer("legacy-bot")).toEqual(defaultEqualizer());
     expect(reopened.getPlayerSettings("legacy-bot")).toEqual({ volume: 75, playMode: "seq" });
     reopened.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("persists independent EQ settings across reopen and preserves them on bot edits", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tsmb-eq-"));
+    const path = join(dir, "bot.db");
+    let database = createDatabase(path);
+    try {
+      const bot: BotInstance = {
+        id: "eq-a", name: "A", serverAddress: "x", serverPort: 9987, nickname: "n",
+        defaultChannel: "", channelId: "", channelPassword: "", autoStart: false,
+        serverProtocol: "", ts6ApiKey: "", serverPassword: "",
+      };
+      database.saveBotInstance(bot);
+      database.saveBotInstance({ ...bot, id: "eq-b" });
+      const settings = { enabled: true, preamp: -6, gains: [6, 4, 2, 0, -2, -4, 0, 0, 2, 4] };
+      database.saveEqualizer(bot.id, settings);
+      database.saveBotInstance({ ...bot, name: "renamed" });
+      database.close(); database = createDatabase(path);
+      expect(database.getEqualizer(bot.id)).toEqual(settings);
+      expect(database.getEqualizer("eq-b")).toEqual(defaultEqualizer());
+      database.db.prepare("UPDATE bot_instances SET equalizer = ? WHERE id = ?").run('{bad', bot.id);
+      expect(database.getEqualizer(bot.id)).toEqual(defaultEqualizer());
+      database.db.prepare("UPDATE bot_instances SET equalizer = ? WHERE id = ?")
+        .run(JSON.stringify({ ...settings, preamp: 99 }), bot.id);
+      expect(database.getEqualizer(bot.id)).toEqual(defaultEqualizer());
+      expect(() => database.saveEqualizer(bot.id, { ...settings, gains: [99] })).toThrow();
+      database.deleteBotInstance(bot.id);
+      expect(database.getEqualizer(bot.id)).toEqual(defaultEqualizer());
+      expect(() => database.saveEqualizer(bot.id, settings)).toThrow("Bot not found");
+    } finally { database.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("persists and clears customAvatarPath on a bot instance", () => {

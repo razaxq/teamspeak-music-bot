@@ -349,6 +349,7 @@ export class BotInstance extends EventEmitter {
     });
 
     this.player.on("trackEnd", () => {
+      if (this.videoSession?.active) return;
       this.logger.debug("Track ended, advancing queue");
       this.playNext().catch((err) => {
         this.logger.error({ err }, "playNext failed after trackEnd");
@@ -356,6 +357,7 @@ export class BotInstance extends EventEmitter {
     });
 
     this.player.on("error", (err: Error) => {
+      if (this.videoSession?.active) return;
       this.logger.error({ err }, "Player error");
       this.playNext().catch((err2) => {
         this.logger.error({ err: err2 }, "playNext failed after player error");
@@ -861,7 +863,7 @@ export class BotInstance extends EventEmitter {
     if (!this.connected && AUDIO_COMMANDS.has(cmd.name)) {
       throw new Error("Bot is not connected to TeamSpeak");
     }
-    if (this.videoSession?.active && ["play", "resume", "stop", "next", "skip", "prev", "playlist", "album", "fm", "artist", "move", "follow"].includes(cmd.name)) {
+    if (this.videoSession?.active && ["play", "stop", "next", "skip", "prev", "playlist", "album", "fm", "artist", "move", "follow"].includes(cmd.name)) {
       await this.videoSession.stop();
     }
     switch (cmd.name) {
@@ -1015,6 +1017,19 @@ export class BotInstance extends EventEmitter {
           song.name = detail.name;
           song.id = detail.id;
         }
+      }
+      if (song.platform === "bilibili" && process.env.TS_VIDEO_ENABLED === "1") {
+        if (!this.connected) return false;
+        this.player.stop();
+        if (this.currentSourceIsSpotify) this.spotifyController.stop();
+        this.currentSourceIsSpotify = false;
+        this.jellyfinReporter?.onStop();
+        await this.startVideo(song.id, 720, song);
+        this.autoPaused = false;
+        this.effectiveDuration = song.duration;
+        this.database.addPlayHistory({botId:this.id,songId:song.id,songName:song.name,artist:song.artist,album:song.album,platform:song.platform,coverUrl:song.coverUrl,requestedBy:song.requestedBy});
+        this.emit("stateChange");
+        return true;
       }
       const result = await provider.getSongUrl(song.id);
       if (!result?.url) {
@@ -1313,7 +1328,7 @@ export class BotInstance extends EventEmitter {
       this.player.resetFailures();
       if (first) await this.resolveAndPlay(first);
     } else {
-      const wasIdle = this.player.getState() === "idle";
+      const wasIdle = this.player.getState() === "idle" && !this.videoSession?.active;
       const startAt = this.queue.size();
       for (const s of tagged) this.queue.add(s);
       if (wasIdle && this.queue.size() > startAt) {
@@ -1331,7 +1346,7 @@ export class BotInstance extends EventEmitter {
     if (error) return error;
     const s = song!;
 
-    const wasIdle = this.player.getState() === "idle";
+    const wasIdle = this.player.getState() === "idle" && !this.videoSession?.active;
     this.queue.add(this.withRequester(s, requesterName));
 
     // If nothing was playing, start this newly-added song immediately.
@@ -1355,7 +1370,7 @@ export class BotInstance extends EventEmitter {
     if (error) return error;
     const s = song!;
 
-    const wasIdle = this.player.getState() === "idle";
+    const wasIdle = this.player.getState() === "idle" && !this.videoSession?.active;
     // Capture the slot addNext WILL insert at, before mutating the queue.
     // addNext pushes when currentIndex<0 (slot = size); otherwise splices
     // at currentIndex+1. Using size-1 after addNext was wrong when the
@@ -1381,6 +1396,9 @@ export class BotInstance extends EventEmitter {
   }
 
   private cmdPause(): string {
+    if (this.videoSession?.active) {
+      this.videoSession.pause(true);this.autoPaused=false;return "Video paused";
+    }
     this.player.pause();
     if (this.queue.current()?.platform === "spotify") {
       this.spotifyController.pause().catch((err) =>
@@ -1392,7 +1410,14 @@ export class BotInstance extends EventEmitter {
     return "Paused";
   }
 
-  private cmdResume(): string {
+  private cmdResume(): string | Promise<string> {
+    if (this.videoSession?.active) {
+      this.videoSession.pause(false);this.autoPaused=false;return "Video resumed";
+    }
+    const song = this.queue.current();
+    if (song?.platform === "bilibili" && process.env.TS_VIDEO_ENABLED === "1") {
+      return this.resolveAndPlay(song).then(ok => ok ? "Video resumed" : "Cannot play video");
+    }
     this.player.resume();
     if (this.queue.current()?.platform === "spotify") {
       this.spotifyController.resume().catch((err) =>
@@ -1961,6 +1986,7 @@ export class BotInstance extends EventEmitter {
   async playNext(maxRetries = 3): Promise<boolean> {
     if (this.isAdvancing || !this.connected) return false;
     this.isAdvancing = true;
+    await this.videoSession?.stop();
     let started = false;
     try {
       this.voteSkipUsers.clear();
@@ -2066,14 +2092,16 @@ export class BotInstance extends EventEmitter {
     return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", state: "idle", title: "", viewers: 0, error: "" };
   }
 
-  async startVideo(query: string, height = 720): Promise<void> {
+  async startVideo(query: string, height = 720, queuedSong?: QueuedSong): Promise<void> {
     if (!this.connected) throw new Error("机器人尚未连接 TeamSpeak");
     if (!this.videoSession) this.videoSession = new VideoSession(this.tsClient, {changed: () => this.onVideoStateChange(), getCookie: () => this.bilibiliProvider.getCookie()});
     if (this.videoSession.active) throw new Error("请先停止当前视频");
     if (process.env.TS_VIDEO_ENABLED !== "1") throw new Error("视频功能未启用");
     const wasPlaying = this.player.getState() === "playing";
     this.cmdPause();
-    try { await this.videoSession.start(query, height); }
+    try { await this.videoSession.start(query, height, queuedSong ? async () => {
+      if (this.connected && this.queue.current() === queuedSong) await this.playNext();
+    } : undefined); }
     catch (error) {
       if (wasPlaying && this.connected && !this.videoSession.active && this.player.getState() === "paused") this.cmdResume();
       throw error;
@@ -2092,8 +2120,8 @@ export class BotInstance extends EventEmitter {
       id: this.id,
       name: this.name,
       connected: this.connected,
-      playing: this.player.getState() === "playing",
-      paused: this.player.getState() === "paused",
+      playing: this.videoSession?.active ? this.getVideoStatus().state === "playing" : this.player.getState() === "playing",
+      paused: this.videoSession?.active ? this.getVideoStatus().state === "paused" : this.player.getState() === "paused",
       currentSong: this.queue.current(),
       queueSize: this.queue.size(),
       volume: this.player.getVolume(),

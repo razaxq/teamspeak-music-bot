@@ -11,7 +11,7 @@ function setup(resolve=async()=>({title:'test'})) {
   let stopped=0,signals=[];
   const source={start:async()=>{},stop:async()=>{stopped++;},process:{kill:s=>{signals.push(s);return true;}}};
   const session=new VideoSession(ts,{resolve,makeSource:()=>source});
-  return {session,sent,signals,get stopped(){return stopped;}};
+  return {session,source,sent,signals,get stopped(){return stopped;}};
 }
 test('Bilibili input cannot inject a URL or command',()=>{
   assert.deepEqual(parseVideo('https://www.bilibili.com/video/BV1KN411N7sG/?p=2'),{bvid:'BV1KN411N7sG',page:2});
@@ -58,4 +58,11 @@ test('rejoining replaces stale peer and old callbacks cannot close the new conne
   assert.equal(session.viewers.size,1);assert.equal(peers.length,2);
   await session.handle({name:'notifystreamclientleft',params:{id:'stream',clid:'8'}});assert.equal(session.viewers.size,0);
  } finally {await session.stop();}
+});
+
+test('natural completion advances once; manual stop and encoder failure do not advance',async()=>{
+ let count=0;const a=setup();await a.session.start('BV1KN411N7sG',720,async()=>{count++;});
+ await a.source.onEnd(true);await a.source.onEnd(true);assert.equal(count,1);assert.equal(a.session.active,false);
+ const b=setup();await b.session.start('BV1KN411N7sG',720,async()=>{count++;});await b.session.stop();await b.source.onEnd(true);assert.equal(count,1);
+ const c=setup();await c.session.start('BV1KN411N7sG',720,async()=>{count++;});await c.source.onEnd(false);assert.equal(count,1);assert.ok(c.session.error);
 });

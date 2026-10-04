@@ -19,10 +19,9 @@
     </div>
     <div class="song-album">{{ song.album }}</div>
     <div class="song-duration">{{ formatDuration(song.duration) }}</div>
-    <div class="song-actions" :class="{ 'has-video': showVideo }">
-      <button v-if="showVideo" class="action-btn video-btn" @click.stop="store.openVideo(song)" @dblclick.stop title="在 TeamSpeak 播放视频"><Icon icon="mdi:video" />播放视频</button>
-      <button v-if="showPlay" class="action-btn" @click.stop="$emit('play')" :title="song.platform === 'bilibili' ? '播放音频（会停止视频共享）' : '播放'">
-        <Icon icon="mdi:play" />
+    <div class="song-actions" :class="{ 'has-video': song.platform === 'bilibili' }">
+      <button v-if="showPlay" class="action-btn" @click.stop="$emit('play')" :title="song.platform === 'bilibili' ? '播放视频（自动共享）' : '播放'">
+        <Icon :icon="song.platform === 'bilibili' ? 'mdi:video' : 'mdi:play'" /><span v-if="song.platform === 'bilibili'" class="video-label">播放视频</span>
       </button>
       <button v-if="showPlayNext" class="action-btn" @click.stop="$emit('playNext')" title="下一首播放">
         <Icon icon="mdi:playlist-play" />
@@ -38,18 +37,16 @@
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import CoverArt from './CoverArt.vue';
-import { Song, usePlayerStore } from '../stores/player.js';
+import { Song } from '../stores/player.js';
 import { useSession } from '../composables/useSession.js';
 
-const props = defineProps<{
+defineProps<{
   song: Song;
   index: number;
   active?: boolean;
 }>();
 
 const { can, guestCan } = useSession();
-const store = usePlayerStore();
-const showVideo = computed(() => props.song.platform === 'bilibili' && can('player.control') && !!store.activeBotId);
 const showPlay = computed(() => can('player.control') || guestCan('playNow'));
 const showPlayNext = computed(() => can('player.control') || guestCan('playNext'));
 const showAdd = computed(() => can('player.queue') || guestCan('addToQueue'));
@@ -234,7 +231,7 @@ function formatDuration(seconds: number): string {
 }
 
 .song-actions.has-video { opacity: 1; }
-.video-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px !important; white-space: nowrap; color: var(--brand-bilibili); }
+.video-label { font-size:12px; margin-left:4px; white-space:nowrap; }
 .song-actions {
   display: flex;
   gap: 4px;

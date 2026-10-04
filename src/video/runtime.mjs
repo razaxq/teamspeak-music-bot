@@ -17,7 +17,7 @@ export class VideoSession {
   }
   get active(){return this.state!=='idle';}
   status(){return {enabled:process.env.TS_VIDEO_ENABLED==='1',state:this.state,title:this.title,viewers:[...this.viewers.values()].filter(v=>v.pc.connectionState==='connected').length,error:this.error,streamId:this.stream,publisherId:this.ts.getClientId(),packets:{...this.source?.counts},connections:[...this.viewers.entries()].map(([clientId,v])=>({clientId,state:v.pc.connectionState,ice:v.pc.iceConnectionState})),diagnostics:this.diagnostics,resolution:this.profile?`${this.profile.height}p / ${this.profile.fps}fps`:null};}
-  async start(query, height=720) {
+  async start(query, height=720, onEnded) {
     videoProfile(height);
     if(process.env.TS_VIDEO_ENABLED!=='1')throw new Error('视频功能未启用');
     if(owner||this.active)throw new Error('已有视频共享，请先停止');
@@ -29,7 +29,13 @@ export class VideoSession {
       if(generation!==this.generation)return;
       this.title=input.title;
       const source=this.makeSource();this.source=source;
-      source.onEnd=()=>{if(this.source===source)void this.stop();};
+      source.onEnd=async (complete=true)=>{
+        if(this.source!==source)return;
+        await this.stop();
+        if(generation+1!==this.generation)return;
+        if(complete) {try {await onEnded?.();} catch {this.error='无法播放下一项';this.changed();}}
+        else {this.error='视频播放中断，请重试';this.changed();}
+      };
       this.profile=videoProfile(height,input.height||360);
       await source.start(input,this.profile);
       if(generation!==this.generation){await source.stop();return;}

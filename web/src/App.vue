@@ -43,7 +43,6 @@
         <div class="m-player-artist">{{ currentSong.artist }}</div>
       </div>
       <div class="m-player-controls" @click.stop>
-        <button v-if="can('player.control') && currentSong.platform === 'bilibili'" class="m-player-btn" aria-label="播放视频" @click="playerStore.openVideo(currentSong)"><Icon icon="mdi:video" /></button>
         <button v-if="can('player.control')" class="m-player-btn" @click="playerStore.prev()">
           <Icon icon="mdi:skip-previous" />
         </button>

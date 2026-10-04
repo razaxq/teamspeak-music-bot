@@ -50,8 +50,8 @@ export class MediaSource {
       '-payload_type','111','-f','rtp',`rtp://127.0.0.1:${ports[1]}?pkt_size=1100`],{stdio:['ignore','ignore','pipe']});
     // Do not log FFmpeg's stderr: signed media URLs can appear in errors.
     this.process.stderr.resume();
-    this.process.on('error',()=>this.onEnd?.());
-    this.process.on('exit',()=>this.onEnd?.());
+    this.process.on('error',()=>this.onEnd?.(false));
+    this.process.on('exit',code=>this.onEnd?.(code===0));
   }
   async stop() {
     const p=this.process; this.process=null;

@@ -43,7 +43,7 @@
           <button v-if="canControl" class="control-btn" @click="store.prev()">
             <Icon icon="mdi:skip-previous" />
           </button>
-          <button v-if="canTransport" class="play-btn" @click="togglePlay" title="播放 / 暂停音频">
+          <button v-if="canTransport" class="play-btn" @click="togglePlay" :title="currentSong.platform === 'bilibili' ? '播放 / 暂停视频' : '播放 / 暂停音频'">
             <Icon :icon="store.isPlaying ? 'mdi:pause' : 'mdi:play'" />
           </button>
           <button v-if="canSkip" class="control-btn" @click="store.next()">
@@ -58,7 +58,6 @@
       </div>
 
       <div class="player-right">
-        <button v-if="canControl && currentSong.platform === 'bilibili'" class="control-btn video-play" @click="store.openVideo(currentSong)"><Icon icon="mdi:video" />播放视频</button>
         <!-- Volume gated on transport -->
         <template v-if="canTransport">
           <button class="control-btn" :class="{ active: activeBot?.surround?.enabled }"

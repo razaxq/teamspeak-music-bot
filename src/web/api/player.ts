@@ -571,7 +571,7 @@ export function createPlayerRouter(
       // interleave (audible track must match queue.currentIndex).
       const body = await bot.runExclusive(async () => {
         const queue = bot.getQueueManager();
-        const wasIdle = bot.getPlayer().getState() === "idle";
+        const wasIdle = bot.getPlayer().getState() === "idle" && bot.getVideoStatus().state === "idle";
         // Capture the slot addNext WILL insert at, before mutating the queue.
         // addNext pushes when currentIndex<0 (slot = size); otherwise splices
         // at currentIndex+1. Using size-1 after addNext was wrong when the
@@ -652,7 +652,7 @@ export function createPlayerRouter(
       // requests can't interleave (audible track must match queue.currentIndex).
       const body = await bot.runExclusive(async () => {
         const queue = bot.getQueueManager();
-        const wasIdle = bot.getPlayer().getState() === "idle";
+        const wasIdle = bot.getPlayer().getState() === "idle" && bot.getVideoStatus().state === "idle";
         queue.add({ ...song, requestedBy: requesterName(req) });
 
         // If nothing was playing, start this newly-added song immediately.
@@ -696,7 +696,7 @@ export function createPlayerRouter(
       queue.add({ ...song, platform: provider.platform, requestedBy: requesterName(req) });
 
       // If nothing is playing, start the first song
-      if (bot.getPlayer().getState() === "idle") {
+      if (bot.getPlayer().getState() === "idle" && bot.getVideoStatus().state === "idle") {
         const first = queue.play();
         if (first) await bot.resolveAndPlay(first);
       }

@@ -29,3 +29,11 @@ describe('video playback permissions',()=>{
     expect(bot.pauseVideo.mock.calls).toEqual([[true],[false]]);expect(bot.stopVideo).toHaveBeenCalledOnce();
   });
 });
+
+it('rejects unsupported resolution and passes supported selection to the bot',async()=>{
+ const {app,bot}=setup();
+ expect((await request(app).post('/api/player/b/video').send({action:'start',query:'BV1KN411N7sG',height:4320})).status).toBe(400);
+ expect(bot.startVideo).not.toHaveBeenCalled();
+ expect((await request(app).post('/api/player/b/video').send({action:'start',query:'BV1KN411N7sG',height:1080})).status).toBe(200);
+ expect(bot.startVideo).toHaveBeenCalledWith('BV1KN411N7sG',1080);
+});

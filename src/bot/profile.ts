@@ -32,6 +32,7 @@ export class BotProfileManager {
    * pushed immediately (idle) or wait for the next stop event (playing).
    */
   private currentSong: QueuedSong | null = null;
+  private videoNickname: string | null = null;
   /**
    * Channel whose description currently holds our now-playing text, or null
    * if we have not written one. Remembered so that when the bot is moved we
@@ -141,6 +142,7 @@ export class BotProfileManager {
   onConnect(): void {
     this.generation++;
     this.currentSong = null;
+    this.videoNickname = null;
     // Channel ids are per-server; never carry one across a (re)connect.
     this.channelDescCid = null;
     this.permDenied = {
@@ -182,6 +184,16 @@ export class BotProfileManager {
     if (this.currentSong) {
       await this.updateChannelDescription(this.currentSong, newChannelId);
     }
+  }
+
+  /** Temporary video presence; preserves music metadata and profile settings. */
+  async setVideoPresence(title: string | null, paused = false): Promise<void> {
+    ++this.generation;
+    const nickname = title
+      ? Array.from(`${paused ? "[暂停]" : "[视频]"} ${title}`).slice(0, TS3_NICKNAME_MAX).join("")
+      : (this.currentSong && this.config.nicknameEnabled ? this.buildNickname(this.currentSong) : this.defaultNickname);
+    this.videoNickname = title ? nickname : null;
+    await this.tsClient.execCommand(`clientupdate client_nickname=${escapeTS3(nickname || this.defaultNickname)}`);
   }
 
   getConfig(): ProfileConfig {
@@ -352,6 +364,8 @@ export class BotProfileManager {
         }
       }
     }
+
+    if (this.videoNickname !== null) rawProps.client_nickname = this.videoNickname;
 
     // --- Away status ---
     if (this.config.awayStatusEnabled && !this.permDenied.awayStatus) {

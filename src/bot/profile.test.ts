@@ -266,3 +266,17 @@ describe("BotProfileManager channel description follows the bot (#159)", () => {
     expect(channelEdits()).toHaveLength(1);
   });
 });
+it('video presence updates only nickname and restores it without changing profile settings', async () => {
+ const ts=makeMockTs();const pm=new BotProfileManager(ts,noopLogger,{...cfgOff,channelDescEnabled:true,nowPlayingMsgEnabled:true},'Music Bot');
+ const before=pm.getConfig();
+ await pm.setVideoPresence('视频 A');await pm.setVideoPresence('视频 A',true);await pm.setVideoPresence(null);
+ expect(vi.mocked(ts.execCommand).mock.calls.map(c=>c[0])).toEqual(['clientupdate client_nickname=[视频]\\s视频\\sA','clientupdate client_nickname=[暂停]\\s视频\\sA','clientupdate client_nickname=Music\\sBot']);
+ expect(pm.getConfig()).toEqual(before);expect(ts.uploadCalls).toHaveLength(0);
+});
+it('late music profile completion preserves an active video nickname', async () => {
+ const ts=makeMockTs();const pm=new BotProfileManager(ts,noopLogger,{...cfgOff,nicknameEnabled:true},'Music Bot');
+ await pm.setVideoPresence('Video');await pm.onSongChange(fakeSong);
+ const commands=vi.mocked(ts.sendCommandNoWait).mock.calls.map(c=>c[0]);
+ expect(commands.at(-1)).toContain('client_nickname=[视频]\\sVideo');
+ await pm.setVideoPresence(null);expect(vi.mocked(ts.execCommand).mock.calls.at(-1)![0]).not.toContain('[视频]');
+});

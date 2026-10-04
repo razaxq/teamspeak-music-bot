@@ -142,6 +142,7 @@ export interface BotInstanceOptions {
 }
 
 export interface BotStatus {
+  video?: ReturnType<VideoSession["status"]>;
   id: string;
   name: string;
   connected: boolean;
@@ -186,6 +187,8 @@ export class BotInstance extends EventEmitter {
   private config: BotConfig;
   private logger: Logger;
   private avatarStore: AvatarStore;
+  private videoPresenceKey = "";
+  private videoPresenceUpdate: Promise<void> = Promise.resolve();
   private videoSession: VideoSession | null = null;
   private connected = false;
   private disconnectEmitted = false;
@@ -1030,6 +1033,9 @@ export class BotInstance extends EventEmitter {
         );
         return false;
       }
+      // A video can begin while a restored music URL is still resolving.
+      // Preserve the queue but do not resume that stale music request.
+      if (this.videoSession?.active) return true;
       // Stage 2: a `spotify:` sentinel URI means the go-librespot sidecar
       // serves the audio, NOT ffmpeg. Start the per-bot sidecar on demand; if
       // it can't run (disabled / non-Linux / binary missing) keep the Stage-1
@@ -2043,18 +2049,31 @@ export class BotInstance extends EventEmitter {
     return next;
   }
 
+  private onVideoStateChange(): void {
+    const video = this.getVideoStatus();
+    const key = `${video.state}:${video.title}`;
+    if (this.connected && key !== this.videoPresenceKey) {
+      this.videoPresenceKey = key;
+      this.videoPresenceUpdate = this.videoPresenceUpdate.catch(() => {}).then(async () => {
+        if (!this.connected) return;
+        await this.profileManager.setVideoPresence(video.state === "idle" ? null : video.title || "正在准备", video.state === "paused");
+      }).catch(() => this.logger.warn("Video nickname update failed"));
+    }
+    this.emit("stateChange");
+  }
+
   getVideoStatus() {
     return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", state: "idle", title: "", viewers: 0, error: "" };
   }
 
-  async startVideo(query: string): Promise<void> {
+  async startVideo(query: string, height = 720): Promise<void> {
     if (!this.connected) throw new Error("机器人尚未连接 TeamSpeak");
-    if (!this.videoSession) this.videoSession = new VideoSession(this.tsClient, {changed: () => this.emit("stateChange")});
+    if (!this.videoSession) this.videoSession = new VideoSession(this.tsClient, {changed: () => this.onVideoStateChange(), getCookie: () => this.bilibiliProvider.getCookie()});
     if (this.videoSession.active) throw new Error("请先停止当前视频");
     if (process.env.TS_VIDEO_ENABLED !== "1") throw new Error("视频功能未启用");
     const wasPlaying = this.player.getState() === "playing";
     this.cmdPause();
-    try { await this.videoSession.start(query); }
+    try { await this.videoSession.start(query, height); }
     catch (error) {
       if (wasPlaying && this.connected && !this.videoSession.active && this.player.getState() === "paused") this.cmdResume();
       throw error;
@@ -2069,6 +2088,7 @@ export class BotInstance extends EventEmitter {
 
   getStatus(): BotStatus {
     return {
+      video: this.getVideoStatus(),
       id: this.id,
       name: this.name,
       connected: this.connected,

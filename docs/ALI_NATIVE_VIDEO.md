@@ -8,7 +8,7 @@ Open the music web UI, select a connected bot, click 视频共享, paste a publi
 
 ## Scope
 
-360p / 20 fps VP8, 650 kbit/s video, stereo Opus 96 kbit/s. Up to three viewers and one active video across all bots. Anonymous Bilibili videos only. No video seek, playlist auto-advance, video EQ/surround, or persistence of an active video through restart. Video ends automatically at end of input. This is native TeamSpeak P2P sharing; Piik SFU is not involved. Networks that block the media path may fail to connect.
+Selectable VP8 output: 360p/20fps at 650 kbit/s, 480p/20fps at 1000 kbit/s, default 720p/20fps at 1600 kbit/s, or 1080p/15fps at 2500 kbit/s; stereo Opus 96 kbit/s. Output is capped at the available source height. Up to three viewers and one active video across all bots. Uses the existing bot-wide Bilibili provider login at each start. Cookies are sent only to api.bilibili.com with redirects disabled, never to viewers or media CDN/FFmpeg. Without valid login the accessible resolution may be lower. H.264 source is preferred over HEVC to reduce CPU load. No video seek, playlist auto-advance, video EQ/surround, or persistence of an active video through restart. Video ends automatically at end of input. This is native TeamSpeak P2P sharing; Piik SFU is not involved. Networks that block the media path may fail to connect.
 
 ## Runtime
 
@@ -20,6 +20,14 @@ Protocol reference: https://github.com/EchoSixHIYA/WebSpeak-client-for-TeamSpeak
 
 ## Validation and rollback
 
-Five video lifecycle/input tests and 42 API/EQ/surround tests pass. TypeScript and web production builds pass. The standalone prototype was verified by the user in native TS6 with BV1KN411N7sG: video, audio, and sync normal. See the deployment report for separate evidence on the integrated production path; do not equate packet reception with human playback/sync verification.
+Eight video lifecycle/input/credential/quality/rejoin tests and 65 API/EQ/surround/profile tests pass. TypeScript and web production builds pass. The standalone prototype was verified by the user in native TS6 with BV1KN411N7sG: video, audio, and sync normal. See the deployment report for separate evidence on the integrated production path; do not equate packet reception with human playback/sync verification.
 
 Compose: /root/teamspeak/docker-compose.yml. Production data: teamspeak_tsmusicbot-data mounted at /app/data. Only tsmusicbot is recreated. Backup directory is recorded in /opt/teamspeak-video-prototype/deployment.json and contains original Compose, stopped-state data archive, SQLite backup, and verification. Restore the backed-up Compose and run docker compose up -d --no-deps tsmusicbot to roll back code; do not restore old data over newer activity unless deliberately requested.
+
+## October 5 integration follow-up
+
+The main web page shows the current video title, state, resolution, and connected-viewer count. Video temporarily overrides the TS nickname, and a late music profile completion cannot replace it. Music URL resolution already in flight is suppressed when video has taken over.
+
+A fresh join replaces any old peer for that TS client. Callbacks from the old peer cannot remove its replacement. Approval-queue removal notifications do not tear down an accepted viewer; actual viewer leave notifications clean up the peer. The connection deadline is 90 seconds. The application enforces the three-peer capacity; the server-side viewer_limit is zero to avoid a second independent quota. Diagnostic status includes peer/ICE states and command types, never SDP or credentials.
+
+Before this follow-up, the user reported that the approval screen briefly appeared and closed. Internal receiver RTP tests passed (3539 video packets, 876 audio packets), and an external peer established ICE/DTLS, but neither result established that this particular user could view the integrated share. Obtain explicit native-client confirmation after the rejoin fix.

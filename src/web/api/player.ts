@@ -39,13 +39,16 @@ export function createPlayerRouter(
 
   router.get("/:botId/video", (req, res) => { res.json({ video: (req as any).bot.getVideoStatus() }); });
   router.post("/:botId/video", authorize({ capability: "player.control" }), async (req, res) => {
-    const { action, query } = req.body ?? {};
+    const { action, query, height = 720 } = req.body ?? {};
     if (!["start", "stop", "pause", "resume"].includes(action) || (action === "start" && (typeof query !== "string" || query.length > 2048 || !/(?:^|\/)(BV[0-9A-Za-z]{10})(?:[/?#]|$)/.test(query)))) {
       res.status(400).json({ error: "请输入有效的 Bilibili BV 链接" }); return;
     }
     try {
       const bot = (req as any).bot;
-      if (action === "start") await bot.startVideo(query);
+      if (action === "start") {
+        if (![360,480,720,1080].includes(height)) { res.status(400).json({error:"请选择支持的分辨率"}); return; }
+        await bot.startVideo(query,height);
+      }
       else if (action === "stop") await bot.stopVideo();
       else bot.pauseVideo(action === "pause");
       res.json({ video: bot.getVideoStatus() });

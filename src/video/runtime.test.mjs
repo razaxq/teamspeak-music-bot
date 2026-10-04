@@ -41,3 +41,21 @@ test('only one bot may allocate video ports; failed resolution releases capacity
   const bad=setup(async()=>{throw new Error('unavailable');});await assert.rejects(bad.session.start('BV1KN411N7sG'));
   await b.session.start('BV1KN411N7sG');await b.session.stop();
 });
+test('rejoining replaces stale peer and old callbacks cannot close the new connection',async()=>{
+ const ts=new EventEmitter();ts.getClientId=()=>7;const sent=[];
+ ts.execCommand=async()=>queueMicrotask(()=>ts.emit('rawNotification',{name:'notifystreamstarted',params:{clid:'7',id:'stream'}}));ts.sendCommandNoWait=async c=>sent.push(c);
+ const peers=[];let removed=0;
+ const event=()=>({subscribe(fn){this.fire=fn;},fire(){}});
+ const makePeer=()=>{const pc={connectionState:'new',iceConnectionState:'new',connectionStateChange:event(),iceConnectionStateChange:event(),createOffer:async()=>({}),setLocalDescription:async()=>{},localDescription:{sdp:'a=candidate:1 1 UDP 1 127.0.0.1 12198 typ host\r\n'},close:async()=>{pc.connectionState='closed';pc.connectionStateChange.fire('closed');}};peers.push(pc);return pc;};
+ const source={start:async()=>{},stop:async()=>{},addPeer:()=>()=>removed++};
+ const session=new VideoSession(ts,{resolve:async()=>({title:'test'}),makeSource:()=>source,makePeer});
+ try {
+  await session.start('BV1KN411N7sG');await session.join(8);await session.join(8);
+  assert.equal(peers.length,2);assert.equal(removed,1);assert.equal(session.viewers.get(8).pc,peers[1]);
+  peers[0].connectionStateChange.fire('failed');await Promise.resolve();assert.equal(session.viewers.get(8).pc,peers[1]);
+  assert.equal(sent.filter(c=>c.startsWith('respondjoinstreamrequest')).length,2);
+  await session.handle({name:'notifyjoinstreamrequest',params:{id:'stream',clid:'8',is_remove:'1'}});
+  assert.equal(session.viewers.size,1);assert.equal(peers.length,2);
+  await session.handle({name:'notifystreamclientleft',params:{id:'stream',clid:'8'}});assert.equal(session.viewers.size,0);
+ } finally {await session.stop();}
+});

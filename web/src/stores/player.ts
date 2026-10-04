@@ -53,6 +53,7 @@ export interface EqualizerSettings {
 }
 
 export interface BotStatus {
+  video?: {state:string;title:string;viewers:number;resolution?:string|null;error?:string};
   id: string;
   name: string;
   connected: boolean;

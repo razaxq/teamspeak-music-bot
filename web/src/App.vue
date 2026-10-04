@@ -4,6 +4,12 @@
     <button v-if="can('player.control') && playerStore.activeBotId" class="video-launch" @click="showVideo = true">视频共享</button>
     <VideoShare v-if="showVideo && can('player.control') && playerStore.activeBotId" :key="playerStore.activeBotId" @close="showVideo = false" />
     <main class="main-content">
+      <section v-if="playerStore.activeBot?.video && playerStore.activeBot.video.state !== 'idle'" class="video-status-card" aria-label="当前视频">
+        <div><strong>{{ playerStore.activeBot.video.state === 'paused' ? '视频已暂停' : playerStore.activeBot.video.state === 'loading' ? '正在准备视频' : '正在共享视频' }}</strong>
+        <h2>{{ playerStore.activeBot.video.title || '正在解析 Bilibili 视频…' }}</h2>
+        <p>{{ playerStore.activeBot.video.resolution || '' }} · {{ playerStore.activeBot.video.viewers }} 位已连接观众 · 在 TS6 中打开机器人的共享观看</p></div>
+        <button v-if="can('player.control')" @click="showVideo = true">视频控制</button>
+      </section>
       <RouterView />
     </main>
     <Player @equalizer="showEqualizer = true" @surround="showSurround = true" />
@@ -627,6 +633,7 @@ onUnmounted(() => {
 </style>
 
 <style>
+.video-status-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;margin:0 0 20px;border:1px solid #8885;border-radius:14px;background:var(--bg-secondary,#20232b)}.video-status-card strong{font-size:12px;color:var(--accent,#91b4ff)}.video-status-card h2{font-size:18px;margin:8px 0;overflow-wrap:anywhere}.video-status-card p{font-size:12px;opacity:.7}.video-status-card button{flex-shrink:0;padding:10px;border:1px solid #8885;border-radius:8px;background:transparent;color:inherit;cursor:pointer}
 .video-launch{position:fixed;right:22px;bottom:100px;z-index:50;padding:10px 16px;border:1px solid #8885;border-radius:24px;background:var(--bg-primary,#171a21);color:var(--text-primary,#eee);box-shadow:0 4px 18px #0003;cursor:pointer;font-size:14px}
 @media(max-width:768px){.video-launch{bottom:155px;right:12px}}
 </style>

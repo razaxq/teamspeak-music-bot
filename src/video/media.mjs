@@ -1,6 +1,7 @@
 import { RTCPeerConnection, RTCRtpCodecParameters, MediaStreamTrack } from 'werift';
 import dgram from 'node:dgram';
 import { spawn } from 'node:child_process';
+import {useSharedUdp} from './shared-udp.mjs';
 import {networkInterfaces} from 'node:os';
 export const codecs = {
   video: [new RTCRtpCodecParameters({mimeType:'video/VP8',clockRate:90000,payloadType:96,rtcpFeedback:[{type:'nack'},{type:'nack',parameter:'pli'}]})],
@@ -9,9 +10,10 @@ export const codecs = {
 export function peer(sender=false) {
   const bindIp=process.env.MEDIA_BIND_IP || networkInterfaces()[process.env.MEDIA_BIND_INTERFACE||'eth0']?.find(a=>a.family==='IPv4'&&!a.internal)?.address;
   if(sender&&!bindIp)throw new Error('Video network interface not available');
-  return new RTCPeerConnection({codecs,bundlePolicy:'max-bundle',iceUseIpv6:false,
-    iceServers:sender ? [] : [{urls:'stun:ali.dtft.net:12196'}], ...(sender ? {icePortRange:[12198,12200],
+  const pc = new RTCPeerConnection({codecs,bundlePolicy:'max-bundle',iceUseIpv6:false,
+    iceServers:sender ? [] : [{urls:'stun:ali.dtft.net:12196'}], ...(sender ? {iceAdditionalHostAddresses:[bindIp],
       iceInterfaceAddresses:{udp4:bindIp}} : {})});
+  return sender ? useSharedUdp(pc,bindIp) : pc;
 }
 export function videoProfile(requested=720, sourceHeight=1080) {
   if(![360,480,720,1080].includes(requested))throw new Error('Unsupported video resolution');

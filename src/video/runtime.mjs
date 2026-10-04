@@ -99,7 +99,7 @@ export class VideoSession {
     if(name==='notifyjoinstreamrequest') {
       // Removal from the approval queue is not a viewer-leave event.
       if(p.is_remove==='1')return;
-      // Serialize candidate gathering: the three allowed UDP ports cannot race.
+      // Serialize admissions and replacement of stale sessions.
       this.joinGate=this.joinGate.catch(()=>{}).then(()=>this.join(clid));await this.joinGate;
     } else if(name==='notifystreamsignaling') {
       const v=this.viewers.get(clid);if(!v)return;
@@ -115,7 +115,6 @@ export class VideoSession {
     // A fresh join must replace a stale session from the same TS client.
     await this.remove(clid);
     const stream=this.stream,generation=this.generation;
-    if(this.viewers.size>=3){await this.ts.sendCommandNoWait(command('respondjoinstreamrequest',{id:stream,clid,decision:0,msg:'视频原型最多三位观众'}));return;}
     this.diagnostics.joinRequests=(this.diagnostics.joinRequests||0)+1;const pc=this.makePeer();const remove=this.source.addPeer(pc);
     const timeout=setTimeout(()=>{this.diagnostics.timeout=true;void this.remove(clid,pc);},90000);
     pc.iceConnectionStateChange.subscribe(state=>{this.diagnostics.lastIceState=state;});

@@ -12,7 +12,7 @@
       <button v-if="video.state === 'playing' || video.state === 'paused'" :disabled="busy" @click="control(video.state === 'paused' ? 'resume' : 'pause')">{{ video.state === 'paused' ? '继续视频' : '暂停视频' }}</button>
       <button v-if="active" :disabled="busy" @click="control('stop')">停止共享</button>
     </div>
-    <p class="hint">实验功能 · 最多 3 位观众 · 默认 720p，最高 1080p；片源不足时自动降级。视频使用独立音轨，暂不应用音乐 EQ 和环绕。普通音乐会暂停，停止视频后可手动继续。</p>
+    <p class="hint">实验功能 · 不设固定观众人数上限 · 默认 720p，最高 1080p；片源不足时自动降级。视频使用独立音轨，暂不应用音乐 EQ 和环绕。普通音乐会暂停，停止视频后可手动继续。</p>
     <p class="hint">沿用机器人设置中的 Bilibili 登录。清晰度取决于账号权限与片源；搜索、队列和聊天点播的 Bilibili 内容默认共享视频，按原队列规则续播；暂不支持拖动视频进度。</p>
     <p v-if="error || video.error" role="alert" class="error">{{ error || video.error }}</p>
   </dialog>

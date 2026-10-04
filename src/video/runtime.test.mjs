@@ -57,6 +57,9 @@ test('rejoining replaces stale peer and old callbacks cannot close the new conne
   await session.handle({name:'notifyjoinstreamrequest',params:{id:'stream',clid:'8',is_remove:'1'}});
   assert.equal(session.viewers.size,1);assert.equal(peers.length,2);
   await session.handle({name:'notifystreamclientleft',params:{id:'stream',clid:'8'}});assert.equal(session.viewers.size,0);
+  for(let id=8;id<16;id++)await session.join(id);
+  assert.equal(session.viewers.size,8);
+  assert.equal(sent.some(c=>c.includes('decision=0')),false);
  } finally {await session.stop();}
 });
 

@@ -8,7 +8,7 @@ export function publicOffer(sdp, ip) {
   return sdp.replace(/^(a=candidate:\S+ \d+ UDP \d+) (\S+) (\d+) typ host(.*)$/gmi,(_,head,_ip,port,tail)=>`${head} ${ip} ${port} typ host${tail}`);
 }
 export class VideoSession {
-  state='idle'; title=''; stream=null; generation=0; viewers=new Map(); source=null; error=''; joinGate=Promise.resolve();
+  state='idle'; title=''; stream=null; generation=0; viewers=new Map(); source=null; error=''; stopTask=null; serverStopped=false; joinGate=Promise.resolve();
   constructor(ts, options={}) {
     this.diagnostics={};this.getCookie=options.getCookie||(()=> '');this.profile=null;this.ts=ts; this.resolve=options.resolve||resolveVideo; this.makeSource=options.makeSource||(()=>new MediaSource());
     this.makePeer=options.makePeer||(()=>peer(true));this.changed=options.changed||(()=>{});
@@ -22,7 +22,7 @@ export class VideoSession {
     if(process.env.TS_VIDEO_ENABLED!=='1')throw new Error('视频功能未启用');
     if(owner||this.active)throw new Error('已有视频共享，请先停止');
     if((!process.env.MEDIA_BIND_IP&&!process.env.MEDIA_BIND_INTERFACE)||!process.env.PUBLIC_IP)throw new Error('视频网络配置缺失');
-    owner=this;const generation=++this.generation;
+    this.serverStopped=false;owner=this;const generation=++this.generation;
     this.state='loading';this.error='';this.diagnostics={};this.changed();
     try {
       const input=await this.resolve(query,{cookie:this.getCookie(),height});
@@ -31,7 +31,7 @@ export class VideoSession {
       const source=this.makeSource();this.source=source;
       source.onEnd=async (complete=true)=>{
         if(this.source!==source)return;
-        await this.stop();
+        try {await this.stop();} catch {return;}
         if(generation+1!==this.generation)return;
         if(complete) {try {await onEnded?.();} catch {this.error='无法播放下一项';this.changed();}}
         else {this.error='视频播放中断，请重试';this.changed();}
@@ -50,7 +50,7 @@ export class VideoSession {
       try {
         await this.ts.execCommand(command('setupstream',{name:input.title.slice(0,80),type:3,bitrate:this.profile.kbps+128,accessibility:1,mode:1,viewer_limit:0,audio:1}));
         const stream=await ready;
-        if(generation!==this.generation){await this.ts.sendCommandNoWait(command('stopstream',{id:stream}));return;}
+        if(generation!==this.generation){await this.ts.execCommand(command('stopstream',{id:stream,reason:1}));return;}
         this.stream=stream;this.state='playing';this.changed();
       } finally {clearTimeout(timer);this.ts.off('rawNotification',handler);}
     } catch(e) {if(generation===this.generation){await this.stop();this.error=e.message;this.changed();}throw e;}
@@ -60,15 +60,33 @@ export class VideoSession {
     if(!this.source?.process?.kill(paused?'SIGSTOP':'SIGCONT'))throw new Error('视频进程不可用');
     this.state=paused?'paused':'playing';this.changed();
   }
-  async stop() {
-    ++this.generation;const stream=this.stream;this.stream=null;
+  stop(serverStopped=false) {
+    if(serverStopped)this.serverStopped=true;
+    if(this.stopTask)return this.stopTask;
+    this.stopTask=this.closeStream().finally(()=>{this.stopTask=null;});
+    return this.stopTask;
+  }
+  async closeStream() {
+    ++this.generation;const stream=this.stream;
     const source=this.source;this.source=null;
     const peers=[...this.viewers.values()];this.viewers.clear();
-    this.state='idle';this.title='';this.profile=null;this.changed();
+    this.state=stream?'stopping':'idle';this.changed();
     if(source?.process)source.process.kill('SIGCONT');
-    await Promise.allSettled([source?.stop(),...peers.map(async v=>{clearTimeout(v.timeout);v.remove();await v.pc.close();}),
-      stream?this.ts.sendCommandNoWait(command('stopstream',{id:stream})):Promise.resolve()]);
+    const cleanup=Promise.allSettled([source?.stop(),...peers.map(async v=>{clearTimeout(v.timeout);v.remove();await v.pc.close();})]);
+    try {
+      if(stream&&!this.serverStopped)await this.ts.execCommand(command('stopstream',{id:stream,reason:1}));
+    } catch(error) {
+      if(!this.serverStopped) {
+        await cleanup;
+        this.error='旧视频共享关闭失败，请重试停止';this.changed();
+        // Keep the stream ID and global lease so a failed close cannot create duplicate shares.
+        throw error;
+      }
+    }
+    await cleanup;
+    this.stream=null;this.state='idle';this.title='';this.profile=null;
     if(owner===this)owner=null;
+    this.changed();
   }
   async remove(clid, expectedPeer) {
     const v=this.viewers.get(clid);if(!v||(expectedPeer&&v.pc!==expectedPeer))return;
@@ -90,7 +108,7 @@ export class VideoSession {
       if(signal.cmd==='answer'&&typeof signal.args?.answer==='string'){this.diagnostics.answerReceived=true;await v.pc.setRemoteDescription({type:'answer',sdp:signal.args.answer});this.diagnostics.answerApplied=true;}
       if(signal.cmd==='iceCandidate'&&typeof signal.args?.sdp==='string')await v.pc.addIceCandidate({candidate:signal.args.sdp,sdpMid:signal.args.mid,sdpMLineIndex:signal.args.mLine});
     } else if(name==='notifystreamclientleft')await this.remove(clid);
-    else if(name==='notifystreamstopped')await this.stop();
+    else if(name==='notifystreamstopped')await this.stop(true);
   }
   async join(clid) {
     if(!this.stream||!Number.isInteger(clid)||clid<=0)return;

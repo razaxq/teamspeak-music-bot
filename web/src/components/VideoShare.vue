@@ -30,7 +30,7 @@ const height=ref(720);
 const video=ref({resolution:null as string|null,enabled:false,state:'idle',title:'',viewers:0,error:''});
 const active=computed(()=>video.value.state!=='idle');
 const busy=ref(false),error=ref(''),dialog=ref<HTMLDialogElement>();
-const labels:Record<string,string>={idle:'尚未共享',loading:'正在准备视频',playing:'共享中',paused:'视频已暂停'};
+const labels:Record<string,string>={idle:'尚未共享',stopping:'正在结束旧共享',loading:'正在准备视频',playing:'共享中',paused:'视频已暂停'};
 let disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
 async function load(){
   try{const {data}=await axios.get(`/api/player/${botId}/video`);if(!disposed){video.value=data.video;const bot=store.bots.find(b=>b.id===botId);if(bot)bot.video=data.video;}}

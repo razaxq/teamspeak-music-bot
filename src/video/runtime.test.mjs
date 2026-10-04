@@ -11,7 +11,7 @@ function setup(resolve=async()=>({title:'test'})) {
   let stopped=0,signals=[];
   const source={start:async()=>{},stop:async()=>{stopped++;},process:{kill:s=>{signals.push(s);return true;}}};
   const session=new VideoSession(ts,{resolve,makeSource:()=>source});
-  return {session,source,sent,signals,get stopped(){return stopped;}};
+  return {session,ts,source,sent,signals,get stopped(){return stopped;}};
 }
 test('Bilibili input cannot inject a URL or command',()=>{
   assert.deepEqual(parseVideo('https://www.bilibili.com/video/BV1KN411N7sG/?p=2'),{bvid:'BV1KN411N7sG',page:2});
@@ -28,7 +28,7 @@ test('play, pause, resume, stop clean up without clearing a music queue',async()
   x.session.pause(true);assert.equal(x.session.state,'paused');x.session.pause(false);
   assert.deepEqual(x.signals,['SIGSTOP','SIGCONT']);
   await x.session.stop();assert.equal(x.session.active,false);assert.equal(x.stopped,1);
-  assert.ok(x.sent.some(c=>c==='stopstream id=stream'));
+  assert.ok(x.sent.some(c=>c==='stopstream id=stream reason=1'));
 });
 test('stop during URL resolution cancels publication and releases global capacity',async()=>{
   let finish;const x=setup(()=>new Promise(r=>{finish=r;}));const pending=x.session.start('BV1KN411N7sG');
@@ -65,4 +65,20 @@ test('natural completion advances once; manual stop and encoder failure do not a
  await a.source.onEnd(true);await a.source.onEnd(true);assert.equal(count,1);assert.equal(a.session.active,false);
  const b=setup();await b.session.start('BV1KN411N7sG',720,async()=>{count++;});await b.session.stop();await b.source.onEnd(true);assert.equal(count,1);
  const c=setup();await c.session.start('BV1KN411N7sG',720,async()=>{count++;});await c.source.onEnd(false);assert.equal(count,1);assert.ok(c.session.error);
+});
+
+test('close waits for acknowledgement, coalesces concurrent stops, and blocks new publication',async()=>{
+ const x=setup();await x.session.start('BV1KN411N7sG');let ack;let calls=0;
+ x.ts.execCommand=async c=>{assert.equal(c,'stopstream id=stream reason=1');calls++;await new Promise(r=>ack=r);};
+ const a=x.session.stop(),b=x.session.stop();assert.equal(calls,1);assert.equal(x.session.state,'stopping');
+ await assert.rejects(x.session.start('BV1KN411N7sG'));
+ ack();await Promise.all([a,b]);assert.equal(x.session.state,'idle');assert.equal(x.session.stream,null);
+});
+test('rejected close keeps stream and lease for retry; confirmed server close releases them',async()=>{
+ const x=setup();await x.session.start('BV1KN411N7sG');
+ x.ts.execCommand=async()=>{throw new Error('rejected');};
+ await assert.rejects(x.session.stop());assert.equal(x.session.stream,'stream');assert.equal(x.session.active,true);
+ const other=setup();await assert.rejects(other.session.start('BV1KN411N7sG'));
+ await x.session.handle({name:'notifystreamstopped',params:{id:'stream'}});
+ assert.equal(x.session.active,false);await other.session.start('BV1KN411N7sG');await other.session.stop();
 });

@@ -421,7 +421,7 @@ export class BotInstance extends EventEmitter {
     });
 
     this.tsClient.on("disconnected", () => {
-      void this.videoSession?.stop();
+      void this.videoSession?.stop(true);
       // Always reset local state — covers the case where connect() never
       // completed (hanging handshake → 60s library idle timeout) and
       // this.connected was never flipped to true. Previously this handler
@@ -488,7 +488,7 @@ export class BotInstance extends EventEmitter {
     });
     this.tsClient.on("clientMoved", (event: { id: number; targetChannelID: bigint }) => {
       if (event.id === this.tsClient.getClientId()) {
-        void this.videoSession?.stop();
+        void this.videoSession?.stop().catch(() => this.logger.warn("Video close failed after channel move"));
         // Moving the bot invalidates every activity deadline from its old
         // channel even if no individual leave events arrive.
         this.voiceDucking.reset(false);
@@ -610,7 +610,7 @@ export class BotInstance extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
-    await this.videoSession?.stop();
+    await this.videoSession?.stop().catch(() => this.logger.warn("Video close failed; disconnect will remove the share"));
     this._cancelIdleTimer();
     this.voiceDucking.reset(true);
     // Cancel any pending live-queue snapshot before clearing so it can't fire
@@ -1986,9 +1986,9 @@ export class BotInstance extends EventEmitter {
   async playNext(maxRetries = 3): Promise<boolean> {
     if (this.isAdvancing || !this.connected) return false;
     this.isAdvancing = true;
-    await this.videoSession?.stop();
     let started = false;
     try {
+      await this.videoSession?.stop();
       this.voteSkipUsers.clear();
       const next = this.queue.next();
       if (next) {

@@ -4,7 +4,9 @@
     <main class="main-content">
       <RouterView />
     </main>
-    <Player @equalizer="showEqualizer = true" />
+    <Player @equalizer="showEqualizer = true" @surround="showSurround = true" />
+    <Surround v-if="showSurround && canTransport && playerStore.activeBotId"
+      :key="playerStore.activeBotId" @close="showSurround = false" />
     <Equalizer v-if="showEqualizer && canTransport && playerStore.activeBotId"
       :key="playerStore.activeBotId" @close="showEqualizer = false" />
     <Toast />
@@ -67,6 +69,7 @@
           @blur="onMobileVolumeRelease"
         />
         <span class="m-volume-value">{{ mobileVolumeDisplay }}</span>
+        <button aria-label="耳机虚拟环绕" @click="showSurround = true; mobileVolumeOpen = false">环绕</button>
         <button aria-label="均衡器 EQ" @click="showEqualizer = true; mobileVolumeOpen = false">EQ</button>
       </div>
     </div>
@@ -104,14 +107,16 @@ import { useSession } from './composables/useSession.js';
 import Navbar from './components/Navbar.vue';
 import Player from './components/Player.vue';
 import Equalizer from './components/Equalizer.vue';
+import Surround from './components/Surround.vue';
 import CoverArt from './components/CoverArt.vue';
 import Toast from './components/Toast.vue';
 import Queue from './components/Queue.vue';
 import BilibiliPartModal from './components/BilibiliPartModal.vue';
 
 const showEqualizer = ref(false);
+const showSurround = ref(false);
 const playerStore = usePlayerStore();
-watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; });
+watch(() => playerStore.activeBotId, () => { showEqualizer.value = false; showSurround.value = false; });
 const session = useSession();
 const { can, guestCan } = session;
 // Mobile mini-player transport gating — mirrors components/Player.vue.

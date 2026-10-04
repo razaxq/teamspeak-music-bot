@@ -1,3 +1,4 @@
+import { HeadphoneSurround, type SurroundSettings } from "./surround.js";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
@@ -165,6 +166,7 @@ export class AudioPlayer extends EventEmitter {
   private state: PlayerState = "idle";
   private volume = 75;
   private equalizer = new PcmEqualizer();
+  private surround = new HeadphoneSurround();
   /**
    * A transient gain envelope layered on top of the persisted user volume.
    * Voice ducking drives this value; keeping it separate means a temporary
@@ -533,6 +535,7 @@ export class AudioPlayer extends EventEmitter {
 
   stop(): void {
     this.equalizer.reset();
+    this.surround.reset();
     // 3. 递增 ID 是最有效的逻辑“隔离墙”
     this.sessionId++; 
     this.frameLoopRunning = false;
@@ -753,8 +756,8 @@ export class AudioPlayer extends EventEmitter {
     const startFactor = baseFactor * startDuckingGain;
     const endFactor = baseFactor * endDuckingGain;
 
-    if (this.equalizer.isActive()) {
-      return this.equalizer.process(pcm, startFactor, endFactor);
+    if (this.equalizer.isActive() || this.surround.isActive()) {
+      return this.equalizer.process(pcm, startFactor, endFactor, this.surround.isActive() ? this.surround : undefined);
     }
 
     if (startFactor >= 1 && endFactor >= 1) {
@@ -817,6 +820,9 @@ export class AudioPlayer extends EventEmitter {
   resetFailures(): void { this.consecutiveFailures = 0; }
   setVolume(vol: number): void { this.volume = Math.max(0, Math.min(100, vol)); }
   getVolume(): number { return this.volume; }
+  setSurround(settings: SurroundSettings): void { this.surround.setSettings(settings); }
+  getSurround(): SurroundSettings { return this.surround.getSettings(); }
+
   setEqualizer(settings: EqualizerSettings): void { this.equalizer.setSettings(settings); }
   getEqualizer(): EqualizerSettings { return this.equalizer.getSettings(); }
   /** Set the temporary voice-ducking gain (0=silent, 1=unchanged). */

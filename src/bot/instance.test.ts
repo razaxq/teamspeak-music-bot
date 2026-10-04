@@ -1,3 +1,4 @@
+import { defaultSurround } from "../audio/surround.js";
 import { defaultEqualizer } from "../audio/equalizer.js";
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
@@ -1184,10 +1185,13 @@ describe("BotInstance — restores persisted player settings on construction (#1
     db.savePlayMode("bot-restore", "loop");
     const eq = { ...defaultEqualizer(), enabled: true, preamp: -6 };
     db.saveEqualizer("bot-restore", eq);
+    const surround = { enabled: true, strength: 75, room: 30 };
+    db.saveSurround("bot-restore", surround);
 
     const bot = new BotInstance(makeOptions("bot-restore", db));
     const status = bot.getStatus();
     expect(status.equalizer).toEqual(eq);
+    expect(status.surround).toEqual(surround);
     expect(status.volume).toBe(33);
     expect(status.playMode).toBe("loop");
     db.close();
@@ -1198,6 +1202,7 @@ describe("BotInstance — restores persisted player settings on construction (#1
     const bot = new BotInstance(makeOptions("brand-new", db));
     const status = bot.getStatus();
     expect(status.equalizer).toEqual(defaultEqualizer());
+    expect(status.surround).toEqual(defaultSurround());
     expect(status.volume).toBe(75);
     expect(status.playMode).toBe("seq");
     db.close();

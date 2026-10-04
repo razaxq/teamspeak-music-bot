@@ -1,3 +1,4 @@
+import { parseSurround, type SurroundSettings } from "../../audio/surround.js";
 import { EQ_FREQUENCIES, parseEqualizer, type EqualizerSettings } from "../../audio/equalizer.js";
 import { Router } from "express";
 import type { BotManager } from "../../bot/manager.js";
@@ -176,6 +177,18 @@ export function createPlayerRouter(
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
+  });
+
+  router.get("/:botId/surround", (req, res) => {
+    res.json({ surround: (req as any).bot.getPlayer().getSurround() });
+  });
+
+  router.post("/:botId/surround", authorize({ capability: "player.control", guestFlag: "transport" }), (req, res) => {
+    let settings: SurroundSettings;
+    try { settings = parseSurround(req.body); }
+    catch (err) { res.status(400).json({ error: (err as Error).message }); return; }
+    try { res.json({ surround: (req as any).bot.setSurround(settings) }); }
+    catch (err) { res.status(500).json({ error: (err as Error).message }); }
   });
 
   router.get("/:botId/equalizer", (req, res) => {

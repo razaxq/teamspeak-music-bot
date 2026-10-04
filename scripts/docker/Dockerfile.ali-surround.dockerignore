@@ -1,0 +1,6 @@
+**
+!dist/
+!dist/**
+!web/
+!web/dist/
+!web/dist/**

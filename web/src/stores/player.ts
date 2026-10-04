@@ -44,6 +44,8 @@ export interface AlbumItem {
   platform: string;
 }
 
+export interface SurroundSettings { enabled: boolean; strength: number; room: number; }
+
 export interface EqualizerSettings {
   enabled: boolean;
   preamp: number;
@@ -60,6 +62,7 @@ export interface BotStatus {
   queueSize: number;
   volume: number;
   equalizer?: EqualizerSettings;
+  surround?: SurroundSettings;
   playMode: string;
   elapsed?: number;
 }
@@ -647,6 +650,13 @@ export const usePlayerStore = defineStore('player', {
       await axios.post(`/api/player/${this.activeBotId}/volume`, { volume });
       const bot = this.bots.find((b) => b.id === this.activeBotId);
       if (bot) bot.volume = volume;
+    },
+
+    async setSurround(botId: string, settings: SurroundSettings): Promise<SurroundSettings> {
+      const { data } = await axios.post(`/api/player/${botId}/surround`, settings);
+      const bot = this.bots.find(b => b.id === botId);
+      if (bot) bot.surround = data.surround;
+      return data.surround;
     },
 
     async setEqualizer(botId: string, settings: EqualizerSettings): Promise<EqualizerSettings> {

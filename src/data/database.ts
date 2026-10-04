@@ -1,3 +1,4 @@
+import { defaultSurround, parseSurround, type SurroundSettings } from "../audio/surround.js";
 import { defaultEqualizer, parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
 import Database from "better-sqlite3";
 import { CAPABILITIES, BOTS_ALL } from "./permissions.js";
@@ -137,6 +138,8 @@ export interface BotDatabase {
   getProfileConfig(botId: string): ProfileConfig;
   saveProfileConfig(botId: string, config: ProfileConfig): void;
   getPlayerSettings(botId: string): PlayerSettings;
+  getSurround(botId: string): SurroundSettings;
+  saveSurround(botId: string, settings: SurroundSettings): void;
   getEqualizer(botId: string): EqualizerSettings;
   saveEqualizer(botId: string, settings: EqualizerSettings): void;
   saveVolume(botId: string, volume: number): void;
@@ -206,6 +209,10 @@ function migrateSchema(db: Database.Database): void {
   }
   if (!names.includes("play_mode")) {
     db.exec("ALTER TABLE bot_instances ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'seq'");
+  }
+
+  if (!names.includes("surround")) {
+    db.exec("ALTER TABLE bot_instances ADD COLUMN surround TEXT");
   }
 
   if (!names.includes("equalizer")) {
@@ -628,6 +635,20 @@ export function createDatabase(dbPath: string): BotDatabase {
           ? row.play_mode
           : DEFAULT_PLAYER_SETTINGS.playMode;
       return { volume, playMode };
+    },
+
+    getSurround(botId) {
+      const row = db.prepare("SELECT surround FROM bot_instances WHERE id = ?").get(botId) as
+        { surround: string | null } | undefined;
+      try { return parseSurround(JSON.parse(row?.surround ?? "null")); }
+      catch { return defaultSurround(); }
+    },
+
+    saveSurround(botId, settings) {
+      const validated = parseSurround(settings);
+      const result = db.prepare("UPDATE bot_instances SET surround = ? WHERE id = ?")
+        .run(JSON.stringify(validated), botId);
+      if (!result.changes) throw new Error("Bot not found");
     },
 
     getEqualizer(botId) {

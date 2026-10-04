@@ -1,3 +1,4 @@
+import { parseSurround, type SurroundSettings } from "../audio/surround.js";
 import { parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
 import { EventEmitter } from "node:events";
 import {
@@ -149,6 +150,7 @@ export interface BotStatus {
   queueSize: number;
   volume: number;
   equalizer: EqualizerSettings;
+  surround: SurroundSettings;
   playMode: PlayMode;
   elapsed: number; // ground truth elapsed seconds from frame count
   /** 当前曲实际播放时长（秒）。试听片段=试听秒数；完整曲=duration。缺失时前端回退 currentSong.duration。 */
@@ -257,6 +259,12 @@ export class BotInstance extends EventEmitter {
       this.player.setEqualizer(this.database.getEqualizer(this.id));
     } catch (err) {
       this.logger.warn({ err }, "Failed to restore equalizer — using defaults");
+    }
+
+    try {
+      this.player.setSurround(this.database.getSurround(this.id));
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to restore surround — using defaults");
     }
 
     // Structural typing (like localProvider.sweepUnreferenced): only the real
@@ -2037,10 +2045,19 @@ export class BotInstance extends EventEmitter {
       queueSize: this.queue.size(),
       volume: this.player.getVolume(),
       equalizer: this.player.getEqualizer(),
+      surround: this.player.getSurround(),
       playMode: this.queue.getMode(),
       elapsed: this.player.getElapsed(),
       effectiveDuration: this.effectiveDuration,
     };
+  }
+
+  setSurround(value: SurroundSettings): SurroundSettings {
+    const settings = parseSurround(value);
+    this.database.saveSurround(this.id, settings);
+    this.player.setSurround(settings);
+    this.emit("stateChange");
+    return this.player.getSurround();
   }
 
   setEqualizer(value: EqualizerSettings): EqualizerSettings {

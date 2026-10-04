@@ -1,0 +1,4 @@
+FROM tsmusicbot:ali-eq-20261004-final
+COPY dist/ /app/dist/
+COPY web/dist/ /app/web/dist/
+LABEL local.teamspeak-music-bot.feature="headphone-surround"

@@ -60,6 +60,10 @@
       <div class="player-right">
         <!-- Volume gated on transport -->
         <template v-if="canTransport">
+          <button class="control-btn" :class="{ active: activeBot?.surround?.enabled }"
+            title="耳机虚拟环绕" aria-label="耳机虚拟环绕" @click="$emit('surround')">
+            <Icon icon="mdi:headphones" />
+          </button>
           <button class="control-btn" title="均衡器 EQ" aria-label="均衡器 EQ" @click="$emit('equalizer')">
             <Icon icon="mdi:tune-vertical" />
           </button>
@@ -98,7 +102,7 @@ import { useDecoupledSlider } from '../composables/useDecoupledSlider.js';
 import CoverArt from './CoverArt.vue';
 import Queue from './Queue.vue';
 
-defineEmits<{ equalizer: [] }>();
+defineEmits<{ equalizer: []; surround: [] }>();
 
 const route = useRoute();
 const router = useRouter();

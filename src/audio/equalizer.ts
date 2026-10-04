@@ -97,10 +97,11 @@ export class PcmEqualizer {
 
   /** Volume/ducking are applied in floating point after EQ, before the ONLY
    * s16 quantization/clamp. A boosted signal can thus be attenuated safely. */
-  process(pcm: Buffer, startGain = 1, endGain = startGain): Buffer {
+  process(pcm: Buffer, startGain = 1, endGain = startGain, spatial?: { processStereo(left: number, right: number): ArrayLike<number> }): Buffer {
     if (pcm.length % 4 !== 0) throw new Error("PCM must contain complete stereo s16le samples");
     const out = Buffer.allocUnsafe(pcm.length);
     const samples = pcm.length / 4;
+    const stereo = new Float64Array(2);
     for (let i = 0; i < samples; i++) {
       if (this.pending && !this.previous) {
         this.previous = this.bank;
@@ -115,7 +116,11 @@ export class PcmEqualizer {
         const input = pcm.readInt16LE(offset);
         let value = filterSample(this.bank, input, channel);
         if (this.previous) value = filterSample(this.previous, input, channel) * (1 - mix) + value * mix;
-        out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(value * gain))), offset);
+        stereo[channel] = value;
+      }
+      const processed = spatial ? spatial.processStereo(stereo[0], stereo[1]) : stereo;
+      for (let channel = 0; channel < 2; channel++) {
+        out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(processed[channel] * gain))), i * 4 + channel * 2);
       }
       if (this.previous && ++this.transition >= PcmEqualizer.TRANSITION_SAMPLES) this.previous = null;
     }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { parseLiveRoom, getLiveInfo, resolveLive } from "../video/live.mjs";
 import axios, { type AxiosInstance } from "axios";
 import type {
   MusicProvider,
@@ -180,6 +181,10 @@ export class BiliBiliProvider implements MusicProvider {
   }
 
   async search(query: string, limit = 20, offset = 0): Promise<SearchResult> {
+    if (parseLiveRoom(query)) {
+      const song = offset === 0 ? await this.getSongDetail(query) : null;
+      return { songs: song ? [song] : [], playlists: [], albums: [] };
+    }
     await this.ensureBuvidCookie();
     await this.ensureWbiKeys();
     // /search/type is page-based; the web pages in limit-aligned steps so
@@ -224,6 +229,10 @@ export class BiliBiliProvider implements MusicProvider {
   }
 
   async getSongDetail(songId: string): Promise<Song | null> {
+    if (parseLiveRoom(songId)) {
+      const info = await getLiveInfo(songId, { cookie: this.getCookie() });
+      return { id: `live:${info.roomId}`, name: `[${info.live ? '直播' : '未开播'}] ${info.title}`, artist: info.artist, album: 'Bilibili 直播', duration: 0, coverUrl: info.coverUrl, platform: 'bilibili' };
+    }
     const { bvid, page } = parseBilibiliId(songId);
     try {
       const res = await this.api.get("/x/web-interface/view", {
@@ -331,6 +340,7 @@ export class BiliBiliProvider implements MusicProvider {
   }
 
   async getSongUrl(songId: string, _quality?: string): Promise<SongUrlResult | null> {
+    if (parseLiveRoom(songId)) return { url: (await resolveLive(songId, { cookie: this.getCookie() })).url };
     const { bvid, page } = parseBilibiliId(songId);
     const cid = await this.getCid(bvid, page);
     if (!cid) return null;

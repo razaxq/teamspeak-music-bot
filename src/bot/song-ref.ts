@@ -1,4 +1,5 @@
 import axios from "axios";
+import { parseLiveRoom } from "../video/live.mjs";
 
 /**
  * Parsing helpers for picking an EXACT song in a !play / !add / !playnext query,
@@ -44,6 +45,8 @@ function looksLikeSongId(token: string): boolean {
 export function parseSongRef(raw: string): SongRef | null {
   const q = (raw ?? "").trim();
   if (!q) return null;
+  const liveRoom = parseLiveRoom(q);
+  if (liveRoom) return { id: `live:${liveRoom}`, platform: "bilibili" };
 
   // Explicit id — platform decided by the command's flags/default. The
   // separator is a colon or plain whitespace, so `id <id>` matches the

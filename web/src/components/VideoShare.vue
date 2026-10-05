@@ -2,18 +2,19 @@
   <dialog ref="dialog" class="video-dialog" @cancel.prevent="$emit('close')">
     <header><h2>在 TeamSpeak 播放视频</h2><button aria-label="关闭视频设置" @click="$emit('close')">×</button></header>
     <p>确认 Bilibili 链接并点击“开始共享”，随后在 TS6 中点击机器人的屏幕共享观看。</p>
-    <label>Bilibili 视频链接<input v-model="query" placeholder="https://www.bilibili.com/video/BV…" :disabled="busy || active" /></label>
+    <label>Bilibili 视频或直播间链接<input v-model="query" placeholder="BV 视频链接或 https://live.bilibili.com/房间号" :disabled="busy || active" /></label>
     <label>输出清晰度<select v-model.number="height" :disabled="busy || active"><option :value="360">360p · 省流量</option><option :value="480">480p</option><option :value="720">720p / 20fps · 推荐</option><option :value="1080">1080p / 15fps · 更清晰</option></select></label>
     <p v-if="video.resolution" class="hint">实际输出 {{ video.resolution }}</p>
     <p v-if="video.title" class="title">{{ video.title }}</p>
     <p role="status">{{ busy ? '正在处理…' : labels[video.state] || video.state }}<span v-if="active"> · {{ video.viewers }} 位观众</span></p>
     <div class="actions">
       <button v-if="!active" :disabled="busy || !query.trim() || !video.enabled" @click="control('start')">开始共享</button>
-      <button v-if="video.state === 'playing' || video.state === 'paused'" :disabled="busy" @click="control(video.state === 'paused' ? 'resume' : 'pause')">{{ video.state === 'paused' ? '继续视频' : '暂停视频' }}</button>
+      <button v-if="!video.isLive && (video.state === 'playing' || video.state === 'paused')" :disabled="busy" @click="control(video.state === 'paused' ? 'resume' : 'pause')">{{ video.state === 'paused' ? '继续视频' : '暂停视频' }}</button>
       <button v-if="active" :disabled="busy" @click="control('stop')">停止共享</button>
     </div>
     <p class="hint">实验功能 · 不设固定观众人数上限 · 默认 720p，最高 1080p；片源不足时自动降级。视频使用独立音轨，暂不应用音乐 EQ 和环绕。普通音乐会暂停，停止视频后可手动继续。</p>
     <p class="hint">沿用机器人设置中的 Bilibili 登录。清晰度取决于账号权限与片源；搜索、队列和聊天点播的 Bilibili 内容默认共享视频，按原队列规则续播；暂不支持拖动视频进度。</p>
+    <p v-if="video.isLive" class="hint">正在播放直播。暂不支持暂停或回看；停止后再次播放会回到实时画面。短暂断线会自动重连，主播下播后结束共享。</p>
     <p v-if="error || video.error" role="alert" class="error">{{ error || video.error }}</p>
   </dialog>
 </template>
@@ -27,10 +28,10 @@ const store=usePlayerStore(),botId=store.activeBotId!;
 const song=store.activeBot?.currentSong;
 const query=ref(props.initialQuery || (song?.platform==='bilibili'?song.id:''));
 const height=ref(720);
-const video=ref({resolution:null as string|null,enabled:false,state:'idle',title:'',viewers:0,error:''});
+const video=ref({resolution:null as string|null,enabled:false,isLive:false,state:'idle',title:'',viewers:0,error:''});
 const active=computed(()=>video.value.state!=='idle');
 const busy=ref(false),error=ref(''),dialog=ref<HTMLDialogElement>();
-const labels:Record<string,string>={idle:'尚未共享',stopping:'正在结束旧共享',loading:'正在准备视频',playing:'共享中',paused:'视频已暂停'};
+const labels:Record<string,string>={idle:'尚未共享',stopping:'正在结束旧共享',loading:'正在准备视频',reconnecting:'直播重连中',playing:'共享中',paused:'视频已暂停'};
 let disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
 async function load(){
   try{const {data}=await axios.get(`/api/player/${botId}/video`);if(!disposed){video.value=data.video;const bot=store.bots.find(b=>b.id===botId);if(bot)bot.video=data.video;}}

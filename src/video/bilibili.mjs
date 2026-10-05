@@ -1,3 +1,4 @@
+import {parseLiveRoom,resolveLive} from './live.mjs';
 export function parseVideo(value) {
   const match=String(value).match(/(?:^|\/)(BV[0-9A-Za-z]{10})(?:[/?#]|$)/);
   if(!match)throw new Error('Use a Bilibili BV video link');
@@ -18,6 +19,7 @@ function mediaUrl(stream) {
   return u.href;
 }
 export async function resolveVideo(value, {cookie='',height=720}={}) {
+  if(parseLiveRoom(value))return resolveLive(value,{cookie,height});
   const {bvid,page}=parseVideo(value);
   const info=await api('/x/web-interface/view?bvid='+bvid,cookie);
   const item=info.pages?.[page-1];if(!item)throw new Error('Video page unavailable');

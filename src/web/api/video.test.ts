@@ -10,6 +10,12 @@ function setup(user:any={role:'admin',bots:'all'}) {
   return {app,bot};
 }
 describe('video playback permissions',()=>{
+  it('accepts a live room through the same authorized video endpoint',async()=>{
+    const {app,bot}=setup();const query='https://live.bilibili.com/31550614?live_from=71002';
+    expect((await request(app).post('/api/player/b/video').send({action:'start',query})).status).toBe(200);
+    expect(bot.startVideo).toHaveBeenCalledWith(query,720);
+    expect((await request(app).post('/api/player/b/video').send({action:'start',query:'https://live.bilibili.com.evil.test/31550614'})).status).toBe(400);
+  });
   it.each([
     [null,401],
     [{role:'member',bots:'all',capabilities:new Set()},403],

@@ -53,7 +53,7 @@ export interface EqualizerSettings {
 }
 
 export interface BotStatus {
-  video?: {state:string;title:string;viewers:number;resolution?:string|null;error?:string};
+  video?: {state:string;isLive?:boolean;title:string;viewers:number;resolution?:string|null;error?:string};
   id: string;
   name: string;
   connected: boolean;
@@ -462,6 +462,7 @@ export const usePlayerStore = defineStore('player', {
      * 检查 B站视频是否为多P，若为多P则弹窗询问，单P则直接修正时长并继续
      */
     async checkBilibiliMultiPart(song: Song, action: 'play' | 'playNext' | 'add'): Promise<boolean> {
+      if (song.id.startsWith('live:')) return false;
       try {
         const cleanBvid = song.id.split('?')[0].split(':')[0];
         const res = await axios.get('/api/music/bilibili/parts', { params: { bvid: cleanBvid } });

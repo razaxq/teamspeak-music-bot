@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { parseSongRef, parseSelectionIndex, parsePlaylistRef, findShareShortLink, resolveShareLink } from "./song-ref.js";
 
+it('routes a Bilibili live URL to its room reference',()=>{
+ expect(parseSongRef('https://live.bilibili.com/31550614?live_from=71002')).toEqual({id:'live:31550614',platform:'bilibili'});
+ expect(parseSongRef('[URL]https://live.bilibili.com/31550614[/URL]')).toEqual({id:'live:31550614',platform:'bilibili'});
+ expect(parseSongRef('https://live.bilibili.com.evil.test/31550614')).toBeNull();
+});
+
 describe("parseSongRef (#90 exact-song selection)", () => {
   it("returns null for a plain search term", () => {
     expect(parseSongRef("Die For You")).toBeNull();

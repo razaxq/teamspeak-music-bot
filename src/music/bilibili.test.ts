@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { BiliBiliProvider } from "./bilibili.js";
 
+it('live link search returns room metadata without ordinary video search',async()=>{
+ const mocked=vi.spyOn(globalThis,'fetch').mockResolvedValue({ok:true,json:async()=>({code:0,data:{room_id:31550614,title:'Test live',live_status:1}})} as any);
+ try{const p=new BiliBiliProvider();const result=await p.search('https://live.bilibili.com/31550614');expect(result.songs[0]).toMatchObject({id:'live:31550614',name:'[直播] Test live',duration:0,platform:'bilibili'});expect(mocked).toHaveBeenCalledTimes(1);expect((await p.search('live:31550614',20,20)).songs).toEqual([]);expect(mocked).toHaveBeenCalledTimes(1);}finally{mocked.mockRestore();}
+});
+
 describe("BiliBiliProvider.search pagination", () => {
   function mockProvider() {
     const p = new BiliBiliProvider();

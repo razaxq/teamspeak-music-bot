@@ -2089,7 +2089,7 @@ export class BotInstance extends EventEmitter {
   }
 
   getVideoStatus() {
-    return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", state: "idle", title: "", viewers: 0, error: "" };
+    return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", isLive: false, state: "idle", title: "", viewers: 0, error: "" };
   }
 
   async startVideo(query: string, height = 720, queuedSong?: QueuedSong): Promise<void> {

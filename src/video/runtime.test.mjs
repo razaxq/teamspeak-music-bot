@@ -85,3 +85,18 @@ test('rejected close keeps stream and lease for retry; confirmed server close re
  await x.session.handle({name:'notifystreamstopped',params:{id:'stream'}});
  assert.equal(x.session.active,false);await other.session.start('BV1KN411N7sG');await other.session.stop();
 });
+
+test('live source restart refreshes the URL while retaining the published share',async()=>{
+ const x=setup(async()=>({title:'live',live:true,height:720}));x.session.liveRetryDelayMs=1;let starts=0;x.source.start=async()=>{starts++;};
+ try{await x.session.start('live:123');const id=x.session.stream;assert.throws(()=>x.session.pause(true));
+ await x.source.onEnd(false);assert.equal(x.session.stream,id);assert.equal(x.session.state,'playing');assert.equal(starts,2);assert.equal(x.session.diagnostics.liveRestarts,1);assert.equal(x.sent.filter(c=>c.startsWith('setupstream')).length,1);
+ }finally{await x.session.stop();}
+});
+test('live room going offline ends the share and advances its queue once',async()=>{
+ let calls=0,ended=0;const x=setup(async()=>{if(calls++){const e=new Error('offline');e.code='LIVE_OFFLINE';throw e;}return{title:'live',live:true};});x.session.liveRetryDelayMs=1;
+ await x.session.start('live:123',720,async()=>{ended++;});await x.source.onEnd(true);assert.equal(x.session.active,false);assert.equal(ended,1);assert.equal(x.session.error,'直播已结束');
+});
+test('manual stop during live URL refresh cannot restart the old source',async()=>{
+ let calls=0,finish;const x=setup(async()=>calls++?new Promise(r=>finish=r):{title:'live',live:true});x.session.liveRetryDelayMs=1;let starts=0;x.source.start=async()=>starts++;
+ await x.session.start('live:123');const recovery=x.source.onEnd(false);while(!finish)await new Promise(r=>setTimeout(r,1));await x.session.stop();finish({title:'late',live:true});await recovery;assert.equal(x.session.active,false);assert.equal(starts,1);
+});

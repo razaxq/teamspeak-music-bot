@@ -5,7 +5,7 @@
     <VideoShare v-if="showVideo && can('player.control') && playerStore.activeBotId" :key="playerStore.activeBotId" :initial-query="videoQuery" @close="showVideo = false" />
     <main class="main-content">
       <section v-if="playerStore.activeBot?.video && playerStore.activeBot.video.state !== 'idle'" class="video-status-card" aria-label="当前视频">
-        <div><strong>{{ playerStore.activeBot.video.state === 'paused' ? '视频已暂停' : playerStore.activeBot.video.state === 'loading' ? '正在准备视频' : '正在共享视频' }}</strong>
+        <div><strong>{{ playerStore.activeBot.video.state === 'reconnecting' ? '直播重连中' : playerStore.activeBot.video.state === 'paused' ? '视频已暂停' : playerStore.activeBot.video.state === 'loading' ? '正在准备视频' : playerStore.activeBot.video.isLive ? '正在共享直播' : '正在共享视频' }}</strong>
         <h2>{{ playerStore.activeBot.video.title || '正在解析 Bilibili 视频…' }}</h2>
         <p>{{ playerStore.activeBot.video.resolution || '' }} · {{ playerStore.activeBot.video.viewers }} 位已连接观众 · 在 TS6 中打开机器人的共享观看</p></div>
         <button v-if="can('player.control')" @click="showVideo = true">视频控制</button>

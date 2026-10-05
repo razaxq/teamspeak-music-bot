@@ -8,15 +8,16 @@ export function publicOffer(sdp, ip) {
   return sdp.replace(/^(a=candidate:\S+ \d+ UDP \d+) (\S+) (\d+) typ host(.*)$/gmi,(_,head,_ip,port,tail)=>`${head} ${ip} ${port} typ host${tail}`);
 }
 export class VideoSession {
+  isLive=false; recoveryTask=null;
   state='idle'; title=''; stream=null; generation=0; viewers=new Map(); source=null; error=''; stopTask=null; serverStopped=false; joinGate=Promise.resolve();
   constructor(ts, options={}) {
-    this.diagnostics={};this.getCookie=options.getCookie||(()=> '');this.profile=null;this.ts=ts; this.resolve=options.resolve||resolveVideo; this.makeSource=options.makeSource||(()=>new MediaSource());
+    this.diagnostics={};this.liveRetryDelayMs=options.liveRetryDelayMs??2000;this.getCookie=options.getCookie||(()=> '');this.profile=null;this.ts=ts; this.resolve=options.resolve||resolveVideo; this.makeSource=options.makeSource||(()=>new MediaSource());
     this.makePeer=options.makePeer||(()=>peer(true));this.changed=options.changed||(()=>{});
     this.listener=n=>{void this.handle(n).catch(()=>{this.error='共享连接失败，请重新加入';this.changed();});};
     ts.on('rawNotification',this.listener);
   }
   get active(){return this.state!=='idle';}
-  status(){return {enabled:process.env.TS_VIDEO_ENABLED==='1',state:this.state,title:this.title,viewers:[...this.viewers.values()].filter(v=>v.pc.connectionState==='connected').length,error:this.error,streamId:this.stream,publisherId:this.ts.getClientId(),packets:{...this.source?.counts},inputHealth:{...this.source?.inputHealth},connections:[...this.viewers.entries()].map(([clientId,v])=>({clientId,state:v.pc.connectionState,ice:v.pc.iceConnectionState})),diagnostics:this.diagnostics,resolution:this.profile?`${this.profile.height}p / ${this.profile.fps}fps`:null};}
+  status(){return {enabled:process.env.TS_VIDEO_ENABLED==='1',isLive:this.isLive,state:this.state,title:this.title,viewers:[...this.viewers.values()].filter(v=>v.pc.connectionState==='connected').length,error:this.error,streamId:this.stream,publisherId:this.ts.getClientId(),packets:{...this.source?.counts},inputHealth:{...this.source?.inputHealth},connections:[...this.viewers.entries()].map(([clientId,v])=>({clientId,state:v.pc.connectionState,ice:v.pc.iceConnectionState})),diagnostics:this.diagnostics,resolution:this.profile?`${this.profile.height}p / ${this.profile.fps}fps`:null};}
   async start(query, height=720, onEnded) {
     videoProfile(height);
     if(process.env.TS_VIDEO_ENABLED!=='1')throw new Error('视频功能未启用');
@@ -27,10 +28,16 @@ export class VideoSession {
     try {
       const input=await this.resolve(query,{cookie:this.getCookie(),height});
       if(generation!==this.generation)return;
+      this.isLive=!!input.live;
       this.title=input.title;
       const source=this.makeSource();this.source=source;
       source.onEnd=async (complete=true)=>{
         if(this.source!==source)return;
+        if(input.live){
+          if(!this.stream)return;
+          if(!this.recoveryTask){const task=this.recoverLive(source,query,height,generation,onEnded).catch(()=>{if(generation===this.generation){this.error='直播恢复失败，请停止共享后重试';this.changed();}}).finally(()=>{if(this.recoveryTask===task)this.recoveryTask=null;});this.recoveryTask=task;}
+          await this.recoveryTask;return;
+        }
         try {await this.stop();} catch {return;}
         if(generation+1!==this.generation)return;
         if(complete) {try {await onEnded?.();} catch {this.error='无法播放下一项';this.changed();}}
@@ -56,6 +63,7 @@ export class VideoSession {
     } catch(e) {if(generation===this.generation){await this.stop();this.error=e.message;this.changed();}throw e;}
   }
   pause(paused) {
+    if(this.isLive)throw new Error('直播不支持暂停；请停止共享，再次播放会回到实时画面');
     if(!['playing','paused'].includes(this.state))throw new Error('当前没有可暂停的视频');
     if(!this.source?.process?.kill(paused?'SIGSTOP':'SIGCONT'))throw new Error('视频进程不可用');
     this.state=paused?'paused':'playing';this.changed();
@@ -66,7 +74,30 @@ export class VideoSession {
     this.stopTask=this.closeStream().finally(()=>{this.stopTask=null;});
     return this.stopTask;
   }
+  async recoverLive(source,query,height,generation,onEnded) {
+    const current=()=>generation===this.generation&&this.source===source;
+    this.state='reconnecting';this.error='直播连接中断，正在重新连接';this.changed();
+    for(let attempt=0;attempt<3&&current();attempt++){
+      await source.stop();
+      await new Promise(r=>setTimeout(r,this.liveRetryDelayMs));if(!current())return;
+      try{
+        const input=await this.resolve(query,{cookie:this.getCookie(),height});if(!current())return;
+        await source.start(input,this.profile);
+        if(!current()){await source.stop();return;}
+        this.diagnostics.liveRestarts=(this.diagnostics.liveRestarts||0)+1;
+        this.state='playing';this.error='';this.changed();return;
+      }catch(error){
+        if(!current())return;
+        if(error.code==='LIVE_OFFLINE'){
+          await this.stop();this.error='直播已结束';this.changed();
+          if(generation+1===this.generation)await onEnded?.();return;
+        }
+      }
+    }
+    if(current()){await this.stop();this.error='直播重连失败，请重新播放';this.changed();}
+  }
   async closeStream() {
+    this.recoveryTask=null;
     ++this.generation;const stream=this.stream;
     const source=this.source;this.source=null;
     const peers=[...this.viewers.values()];this.viewers.clear();
@@ -84,7 +115,7 @@ export class VideoSession {
       }
     }
     await cleanup;
-    this.stream=null;this.state='idle';this.title='';this.profile=null;
+    this.stream=null;this.state='idle';this.title='';this.profile=null;this.isLive=false;
     if(owner===this)owner=null;
     this.changed();
   }

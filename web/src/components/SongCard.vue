@@ -18,7 +18,7 @@
       <div class="song-artist">{{ song.artist }}</div>
     </div>
     <div class="song-album">{{ song.album }}</div>
-    <div class="song-duration">{{ formatDuration(song.duration) }}</div>
+    <div class="song-duration">{{ song.platform === 'bilibili' && song.id.startsWith('live:') ? '直播' : formatDuration(song.duration) }}</div>
     <div class="song-actions" :class="{ 'has-video': song.platform === 'bilibili' }">
       <button v-if="showPlay" class="action-btn" @click.stop="$emit('play')" :title="song.platform === 'bilibili' ? '播放视频（自动共享）' : '播放'">
         <Icon :icon="song.platform === 'bilibili' ? 'mdi:video' : 'mdi:play'" /><span v-if="song.platform === 'bilibili'" class="video-label">播放视频</span>

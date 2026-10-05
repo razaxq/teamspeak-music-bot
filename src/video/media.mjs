@@ -52,10 +52,10 @@ export class MediaSource {
       : input ? [...remoteInput(input.video),...remoteInput(input.audio)]
       : ['-re','-f','lavfi','-i','testsrc2=size=640x360:rate=20','-re','-f','lavfi','-i','sine=frequency=440:sample_rate=48000'];
     this.process=spawn('ffmpeg',['-hide_banner','-loglevel','warning',...inputs,
-      '-map','0:v:0','-an','-vf',`scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2,fps=${profile.fps}`,
+      '-map','0:v:0','-an','-vf',`fps=${profile.fps},scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2`,
       '-c:v','libvpx','-deadline','realtime','-cpu-used','8','-threads','1','-b:v',`${profile.kbps}k`,'-g',String(profile.fps),
       '-payload_type','96','-f','rtp',`rtp://127.0.0.1:${ports[0]}?pkt_size=1100`,
-      '-map',input?.live?'0:a:0':'1:a:0','-vn','-ac','2','-ar','48000','-c:a','libopus','-b:a','96k','-frame_duration','20',
+      '-map',input?.live?'0:a:0':'1:a:0','-vn','-ac','2','-ar','48000',...(input?.live?['-af','aresample=48000,asetpts=N/SR/TB']:[]),'-c:a','libopus','-b:a','96k','-frame_duration','20',
       '-payload_type','111','-f','rtp',`rtp://127.0.0.1:${ports[1]}?pkt_size=1100`],{stdio:['ignore','ignore','pipe']});
     // Do not log FFmpeg's stderr: signed media URLs can appear in errors.
     let pending='';

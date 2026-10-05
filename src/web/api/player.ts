@@ -40,7 +40,7 @@ export function createPlayerRouter(
 
   router.get("/:botId/video", (req, res) => { res.json({ video: (req as any).bot.getVideoStatus() }); });
   router.post("/:botId/video", authorize({ capability: "player.control" }), async (req, res) => {
-    const { action, query, height = 720 } = req.body ?? {};
+    const { action, query, height = parseLiveRoom(query) ? 480 : 720 } = req.body ?? {};
     if (!["start", "stop", "pause", "resume"].includes(action) || (action === "start" && (typeof query !== "string" || query.length > 2048 || (!parseLiveRoom(query) && !/(?:^|\/)(BV[0-9A-Za-z]{10})(?:[/?#]|$)/.test(query))))) {
       res.status(400).json({ error: "请输入有效的 Bilibili 视频或直播间链接" }); return;
     }

@@ -1,3 +1,4 @@
+import { parseLiveRoom } from "../video/live.mjs";
 import { VideoSession } from "../video/runtime.mjs";
 import { parseSurround, type SurroundSettings } from "../audio/surround.js";
 import { parseEqualizer, type EqualizerSettings } from "../audio/equalizer.js";
@@ -1024,7 +1025,7 @@ export class BotInstance extends EventEmitter {
         if (this.currentSourceIsSpotify) this.spotifyController.stop();
         this.currentSourceIsSpotify = false;
         this.jellyfinReporter?.onStop();
-        await this.startVideo(song.id, 720, song);
+        await this.startVideo(song.id, parseLiveRoom(song.id) ? 480 : 720, song);
         this.autoPaused = false;
         this.effectiveDuration = song.duration;
         this.database.addPlayHistory({botId:this.id,songId:song.id,songName:song.name,artist:song.artist,album:song.album,platform:song.platform,coverUrl:song.coverUrl,requestedBy:song.requestedBy});
@@ -2092,7 +2093,7 @@ export class BotInstance extends EventEmitter {
     return this.videoSession?.status() ?? { enabled: process.env.TS_VIDEO_ENABLED === "1", isLive: false, state: "idle", title: "", viewers: 0, error: "" };
   }
 
-  async startVideo(query: string, height = 720, queuedSong?: QueuedSong): Promise<void> {
+  async startVideo(query: string, height = parseLiveRoom(query) ? 480 : 720, queuedSong?: QueuedSong): Promise<void> {
     if (!this.connected) throw new Error("机器人尚未连接 TeamSpeak");
     if (!this.videoSession) this.videoSession = new VideoSession(this.tsClient, {changed: () => this.onVideoStateChange(), getCookie: () => this.bilibiliProvider.getCookie()});
     if (this.videoSession.active) throw new Error("请先停止当前视频");

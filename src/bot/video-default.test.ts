@@ -5,7 +5,7 @@ const proto=BotInstance.prototype as any;
 afterEach(()=>vi.unstubAllEnvs());
 const song={id:'BV1KN411N7sG?p=2',platform:'bilibili',name:'test',duration:10};
 function context(){
- const provider={getSongUrl:vi.fn(async()=>({url:'https://fixture.invalid/audio'}))};
+ const provider={getSongDetail:vi.fn(async()=>null),getSongUrl:vi.fn(async()=>({url:'https://fixture.invalid/audio'}))};
  return {connected:true,voteSkipUsers:new Set(),player:{stop:vi.fn(),play:vi.fn(),pause:vi.fn(),resume:vi.fn()},
  getProviderFor:()=>provider,provider,startVideo:vi.fn(async()=>{}),logger:{error:vi.fn()},database:{addPlayHistory:vi.fn()},emit:vi.fn(),syncProfileToSong:vi.fn(async()=>{}),queue:{current:()=>song}} as any;
 }
@@ -13,6 +13,13 @@ describe('default Bilibili video routing',()=>{
  it('all callers of the shared resolver start video without resolving an audio URL',async()=>{
   vi.stubEnv('TS_VIDEO_ENABLED','1');const c=context();expect(await proto.resolveAndPlay.call(c,song)).toBe(true);
   expect(c.startVideo).toHaveBeenCalledWith(song.id,720,song);expect(c.provider.getSongUrl).not.toHaveBeenCalled();expect(c.player.play).not.toHaveBeenCalled();
+ });
+ it('live links use a realtime default while ordinary videos keep 720p',async()=>{
+  vi.stubEnv('TS_VIDEO_ENABLED','1');
+  for(const id of ['live:31550614','https://live.bilibili.com/31550614']){
+   const c=context(),liveSong={...song,id};expect(await proto.resolveAndPlay.call(c,liveSong)).toBe(true);
+   expect(c.startVideo).toHaveBeenCalledWith(id,480,liveSong);
+  }
  });
  it('does not silently fall back to audio after video publication fails',async()=>{
   vi.stubEnv('TS_VIDEO_ENABLED','1');const c=context();c.startVideo.mockRejectedValue(new Error('publish failed'));

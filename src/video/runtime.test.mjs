@@ -100,3 +100,8 @@ test('manual stop during live URL refresh cannot restart the old source',async()
  let calls=0,finish;const x=setup(async()=>calls++?new Promise(r=>finish=r):{title:'live',live:true});x.session.liveRetryDelayMs=1;let starts=0;x.source.start=async()=>starts++;
  await x.session.start('live:123');const recovery=x.source.onEnd(false);while(!finish)await new Promise(r=>setTimeout(r,1));await x.session.stop();finish({title:'late',live:true});await recovery;assert.equal(x.session.active,false);assert.equal(starts,1);
 });
+
+test('viewer diagnostics serialize WebRTC REMB bigint without breaking admission updates',()=>{
+ const x=setup();x.session.viewers.set(9,{pc:{connectionState:'connected',iceConnectionState:'connected',getSenders:()=>[{kind:'video',receiverEstimatedMaxBitrate:1234567n}]}});
+ const status=JSON.parse(JSON.stringify(x.session.status()));assert.equal(status.connections[0].media[0].estimatedBitrate,1234567);
+});

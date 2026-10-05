@@ -2,6 +2,7 @@ import { RTCPeerConnection, RTCRtpCodecParameters, MediaStreamTrack } from 'weri
 import dgram from 'node:dgram';
 import { spawn } from 'node:child_process';
 import {useSharedUdp} from './shared-udp.mjs';
+import {remoteInput} from './input-options.mjs';
 import {networkInterfaces} from 'node:os';
 export const codecs = {
   video: [new RTCRtpCodecParameters({mimeType:'video/VP8',clockRate:90000,payloadType:96,rtcpFeedback:[{type:'nack'},{type:'nack',parameter:'pli'}]})],
@@ -23,6 +24,7 @@ export function videoProfile(requested=720, sourceHeight=1080) {
 export class MediaSource {
   tracks = new Set(); sockets = []; process = null;
   counts = {video:0,audio:0};
+  inputHealth = {reconnects:0,readErrors:0};
   addPeer(pc) {
     const tracks = ['video','audio'].map(kind => new MediaStreamTrack({kind}));
     tracks.forEach(track => pc.addTransceiver(track,{direction:'sendonly'}));
@@ -41,17 +43,23 @@ export class MediaSource {
         for (const tracks of this.tracks) tracks[kind==='video'?0:1].writeRtp(Buffer.from(data));
       });
     }
-    const inputs = input ? ['-re','-headers','Referer: https://www.bilibili.com\r\nUser-Agent: Mozilla/5.0\r\n','-i',input.video,
-      '-re','-headers','Referer: https://www.bilibili.com\r\nUser-Agent: Mozilla/5.0\r\n','-i',input.audio]
+    const inputs = input ? [...remoteInput(input.video),...remoteInput(input.audio)]
       : ['-re','-f','lavfi','-i','testsrc2=size=640x360:rate=20','-re','-f','lavfi','-i','sine=frequency=440:sample_rate=48000'];
-    this.process=spawn('ffmpeg',['-hide_banner','-loglevel','error',...inputs,
+    this.process=spawn('ffmpeg',['-hide_banner','-loglevel','warning',...inputs,
       '-map','0:v:0','-an','-vf',`scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2,fps=${profile.fps}`,
       '-c:v','libvpx','-deadline','realtime','-cpu-used','8','-threads','1','-b:v',`${profile.kbps}k`,'-g',String(profile.fps),
       '-payload_type','96','-f','rtp',`rtp://127.0.0.1:${ports[0]}?pkt_size=1100`,
       '-map','1:a:0','-vn','-ac','2','-ar','48000','-c:a','libopus','-b:a','96k','-frame_duration','20',
       '-payload_type','111','-f','rtp',`rtp://127.0.0.1:${ports[1]}?pkt_size=1100`],{stdio:['ignore','ignore','pipe']});
     // Do not log FFmpeg's stderr: signed media URLs can appear in errors.
-    this.process.stderr.resume();
+    let pending='';
+    this.process.stderr.on('data',data=>{
+      pending+=data.toString();const lines=pending.split(/[\r\n]/);pending=lines.pop().slice(-8192);
+      for(const line of lines){
+        if(/Will reconnect at/.test(line))this.inputHealth.reconnects++;
+        if(/Stream ends prematurely|Input\/output error|Connection timed out|Error in the pull function/.test(line))this.inputHealth.readErrors++;
+      }
+    });
     this.process.on('error',()=>this.onEnd?.(false));
     this.process.on('exit',code=>this.onEnd?.(code===0));
   }

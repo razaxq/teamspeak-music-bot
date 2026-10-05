@@ -16,7 +16,7 @@ export class VideoSession {
     ts.on('rawNotification',this.listener);
   }
   get active(){return this.state!=='idle';}
-  status(){return {enabled:process.env.TS_VIDEO_ENABLED==='1',state:this.state,title:this.title,viewers:[...this.viewers.values()].filter(v=>v.pc.connectionState==='connected').length,error:this.error,streamId:this.stream,publisherId:this.ts.getClientId(),packets:{...this.source?.counts},connections:[...this.viewers.entries()].map(([clientId,v])=>({clientId,state:v.pc.connectionState,ice:v.pc.iceConnectionState})),diagnostics:this.diagnostics,resolution:this.profile?`${this.profile.height}p / ${this.profile.fps}fps`:null};}
+  status(){return {enabled:process.env.TS_VIDEO_ENABLED==='1',state:this.state,title:this.title,viewers:[...this.viewers.values()].filter(v=>v.pc.connectionState==='connected').length,error:this.error,streamId:this.stream,publisherId:this.ts.getClientId(),packets:{...this.source?.counts},inputHealth:{...this.source?.inputHealth},connections:[...this.viewers.entries()].map(([clientId,v])=>({clientId,state:v.pc.connectionState,ice:v.pc.iceConnectionState})),diagnostics:this.diagnostics,resolution:this.profile?`${this.profile.height}p / ${this.profile.fps}fps`:null};}
   async start(query, height=720, onEnded) {
     videoProfile(height);
     if(process.env.TS_VIDEO_ENABLED!=='1')throw new Error('视频功能未启用');

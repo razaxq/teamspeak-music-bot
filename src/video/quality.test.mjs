@@ -26,3 +26,8 @@ test('video selection preserves multipart IDs from music search results',()=>{
  assert.deepEqual(parseVideo('https://www.bilibili.com/video/BV1KN411N7sG/?p=3'),{bvid:'BV1KN411N7sG',page:3});
  assert.throws(()=>parseVideo('BV1KN411N7sG?p=0'));
 });
+
+test('live 480p uses 30fps while VOD and higher resolutions retain their existing profiles',()=>{
+ assert.equal(videoProfile(480,480,true).fps,30);assert.equal(videoProfile(480,480).fps,20);
+ assert.equal(videoProfile(720,720,true).fps,20);assert.equal(videoProfile(1080,1080,true).fps,15);
+});

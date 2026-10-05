@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import {useSharedUdp} from './shared-udp.mjs';
 import {remoteInput,remoteInputOptions} from './input-options.mjs';
 import {RtpTimeline} from './rtp-timeline.mjs';
+import {RtpPlayoutBuffer} from './playout-buffer.mjs';
 import {networkInterfaces} from 'node:os';
 export const codecs = {
   video: [new RTCRtpCodecParameters({mimeType:'video/VP8',clockRate:90000,payloadType:96,rtcpFeedback:[{type:'nack'},{type:'nack',parameter:'pli'}]})],
@@ -17,13 +18,13 @@ export function peer(sender=false) {
       iceInterfaceAddresses:{udp4:bindIp}} : {})});
   return sender ? useSharedUdp(pc,bindIp) : pc;
 }
-export function videoProfile(requested=720, sourceHeight=1080) {
+export function videoProfile(requested=720, sourceHeight=1080, live=false) {
   if(![360,480,720,1080].includes(requested))throw new Error('Unsupported video resolution');
   const height=Math.max(2,Math.floor(Math.min(requested,sourceHeight)/2)*2);
-  return {height,width:Math.floor(height*16/9/2)*2,fps:height>720?15:20,kbps:height<=360?650:height<=480?1000:height<=720?1600:2500};
+  return {height,width:Math.floor(height*16/9/2)*2,fps:height>720?15:live&&height<=480?30:20,kbps:height<=360?650:height<=480?1000:height<=720?1600:2500};
 }
 export class MediaSource {
-  tracks = new Set(); sockets = []; process = null;
+  tracks = new Set(); sockets = []; process = null; playout = null; epoch = 0;
   counts = {video:0,audio:0};
   inputHealth = {reconnects:0,readErrors:0};
   timelines = {video:new RtpTimeline(90000,4500),audio:new RtpTimeline(48000,960)};
@@ -34,7 +35,9 @@ export class MediaSource {
     return () => {this.tracks.delete(tracks);tracks.forEach(t=>t.stop());};
   }
   async start(input, profile=videoProfile(360,360)) {
-    const before={...this.counts};
+    const epoch=++this.epoch,before={...this.counts};
+    this.timelines.video.step=90000/profile.fps;
+    this.playout=input?.live?new RtpPlayoutBuffer((kind,data)=>{if(epoch===this.epoch)this.sendPacket(kind,data,true);}):null;
     const ports = [];
     for (const kind of ['video','audio']) {
       this.timelines[kind].restart();
@@ -42,10 +45,9 @@ export class MediaSource {
       await new Promise((resolve,reject)=>{socket.once('error',reject);socket.bind(0,'127.0.0.1',resolve);});
       this.sockets.push(socket); ports.push(socket.address().port);
       socket.on('message', data=>{
-        if(data.length<12) return;
-        if(input?.live)data=this.timelines[kind].map(data);
-        this.counts[kind]++;
-        for (const tracks of this.tracks) tracks[kind==='video'?0:1].writeRtp(Buffer.from(data));
+        if(epoch!==this.epoch||data.length<12) return;
+        if(this.playout){if(!this.playout.push(kind,data))void this.onEnd?.(false);}
+        else this.sendPacket(kind,data);
       });
     }
     const inputs = input?.live ? [...remoteInputOptions(),'-skip_frame','noref','-headers','Referer: https://live.bilibili.com/\r\nUser-Agent: Mozilla/5.0\r\n','-i',input.url]
@@ -78,7 +80,14 @@ export class MediaSource {
       throw new Error('直播音视频读取超时');
     }
   }
+  sendPacket(kind,data,live=false) {
+    if(live)data=this.timelines[kind].map(data);
+    this.counts[kind]++;
+    for(const tracks of this.tracks)tracks[kind==='video'?0:1].writeRtp(Buffer.from(data));
+  }
   async stop() {
+    this.epoch++;
+    this.playout?.stop();this.playout=null;
     const p=this.process; this.process=null;
     if(p && p.exitCode===null){p.kill('SIGTERM');await Promise.race([new Promise(r=>p.once('exit',r)),new Promise(r=>setTimeout(()=>{p.kill('SIGKILL');r();},3000).unref())]);}
     this.sockets.forEach(s=>s.close());this.sockets=[];

@@ -191,6 +191,7 @@ export class BotInstance extends EventEmitter {
   private videoPresenceKey = "";
   private videoPresenceUpdate: Promise<void> = Promise.resolve();
   private videoSession: VideoSession | null = null;
+  private videoQueueItem: QueuedSong | null = null;
   private connected = false;
   private disconnectEmitted = false;
   private voteSkipUsers = new Set<string>();
@@ -864,9 +865,6 @@ export class BotInstance extends EventEmitter {
     if (!this.connected && AUDIO_COMMANDS.has(cmd.name)) {
       throw new Error("Bot is not connected to TeamSpeak");
     }
-    if (this.videoSession?.active && ["play", "stop", "next", "skip", "prev", "playlist", "album", "fm", "artist", "move", "follow"].includes(cmd.name)) {
-      await this.videoSession.stop();
-    }
     switch (cmd.name) {
       case "search":
       case "find":
@@ -883,6 +881,7 @@ export class BotInstance extends EventEmitter {
       case "resume":
         return this.cmdResume();
       case "stop":
+        await this.videoSession?.stop();
         return this.cmdStop();
       case "next":
       case "skip":
@@ -1523,7 +1522,8 @@ export class BotInstance extends EventEmitter {
     return `Queue (${songs.length} songs, mode: ${this.queue.getMode()}):\n${lines.join("\n")}`;
   }
 
-  private cmdClear(): string {
+  private async cmdClear(): Promise<string> {
+    await this.videoSession?.stop();
     this.spotifyController.stop();
     this.currentSourceIsSpotify = false;
     this.player.stop();
@@ -1546,6 +1546,11 @@ export class BotInstance extends EventEmitter {
     // is only meaningful pre-remove.
     const removingCurrentSpotify =
       index === this.queue.getCurrentIndex() && this.currentSourceIsSpotify;
+    const removingCurrentVideo = index === this.queue.getCurrentIndex() &&
+      !!this.videoSession?.active && !!this.videoQueueItem && this.videoQueueItem === this.queue.current();
+    // Invalidate the completion callback before editing its queue entry.
+    // If stopping fails, preserve the queue so the user can retry safely.
+    if (removingCurrentVideo) await this.videoSession!.stop();
     const removed = this.queue.remove(index);
     if (!removed) return "Invalid position";
     // Corner-case R3-2: removing the track the Spotify sidecar is decoding
@@ -1557,8 +1562,8 @@ export class BotInstance extends EventEmitter {
     // cleanly if the queue is now empty (playNext's exhausted branch stops the
     // player). Non-current or non-spotify removals are untouched (a URL current
     // track self-heals via its own EOF).
-    if (removingCurrentSpotify) {
-      this.spotifyController.stop();
+    if (removingCurrentSpotify || removingCurrentVideo) {
+      if (removingCurrentSpotify) this.spotifyController.stop();
       this.currentSourceIsSpotify = false;
       this.player.stop();
       await this.playNext();
@@ -2078,6 +2083,7 @@ export class BotInstance extends EventEmitter {
 
   private onVideoStateChange(): void {
     const video = this.getVideoStatus();
+    if (video.state === "idle") this.videoQueueItem = null;
     const key = `${video.state}:${video.title}`;
     if (this.connected && key !== this.videoPresenceKey) {
       this.videoPresenceKey = key;
@@ -2100,6 +2106,7 @@ export class BotInstance extends EventEmitter {
     if (process.env.TS_VIDEO_ENABLED !== "1") throw new Error("视频功能未启用");
     const wasPlaying = this.player.getState() === "playing";
     this.cmdPause();
+    this.videoQueueItem = queuedSong ?? null;
     try { await this.videoSession.start(query, height, queuedSong ? async () => {
       if (this.connected && this.queue.current() === queuedSong) await this.playNext();
     } : undefined); }

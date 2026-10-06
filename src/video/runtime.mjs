@@ -1,5 +1,6 @@
 import { peer, MediaSource, videoProfile } from './media.mjs';
 import { resolveVideo } from './bilibili.mjs';
+import {ServerError} from '@honeybbq/teamspeak-client';
 let owner = null;
 const escape = v => String(v).replace(/\\/g,'\\\\').replace(/ /g,'\\s').replace(/\//g,'\\/').replace(/\|/g,'\\p').replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\t/g,'\\t');
 export const command = (name, fields) => name+' '+Object.entries(fields).map(([k,v])=>`${k}=${escape(v)}`).join(' ');
@@ -11,6 +12,7 @@ export class VideoSession {
   isLive=false; recoveryTask=null;
   state='idle'; title=''; stream=null; generation=0; viewers=new Map(); source=null; error=''; stopTask=null; serverStopped=false; joinGate=Promise.resolve();
   constructor(ts, options={}) {
+    this.publication=null;this.publicationTimeoutMs=options.publicationTimeoutMs??8000;
     this.diagnostics={};this.liveRetryDelayMs=options.liveRetryDelayMs??2000;this.getCookie=options.getCookie||(()=> '');this.profile=null;this.ts=ts; this.resolve=options.resolve||resolveVideo; this.makeSource=options.makeSource||(()=>new MediaSource());
     this.makePeer=options.makePeer||(()=>peer(true));this.changed=options.changed||(()=>{});
     this.listener=n=>{void this.handle(n).catch(()=>{this.error='共享连接失败，请重新加入';this.changed();});};
@@ -46,21 +48,54 @@ export class VideoSession {
       this.profile=videoProfile(height,input.height||360,!!input.live);
       await source.start(input,this.profile);
       if(generation!==this.generation){await source.stop();return;}
-      let handler,timer;
-      const ready=new Promise((resolve,reject)=>{
-        handler=n=>{if(n.name==='notifystreamstarted'&&Number(n.params.clid)===this.ts.getClientId())resolve(n.params.id||n.params.stream_id);};
-        this.ts.on('rawNotification',handler);
-        timer=setTimeout(()=>reject(new Error('TeamSpeak 未确认视频共享')),8000);
-      });
-      // Attach a rejection handler while the command is in flight.
-      ready.catch(()=>{});
-      try {
-        await this.ts.execCommand(command('setupstream',{name:input.title.slice(0,80),type:3,bitrate:this.profile.kbps+128,accessibility:1,mode:1,viewer_limit:0,audio:1}));
-        const stream=await ready;
-        if(generation!==this.generation){await this.ts.execCommand(command('stopstream',{id:stream,reason:1}));return;}
-        this.stream=stream;this.state='playing';this.changed();
-      } finally {clearTimeout(timer);this.ts.off('rawNotification',handler);}
-    } catch(e) {if(generation===this.generation){await this.stop();this.error=e.message;this.changed();}throw e;}
+      const publication=this.publish(command('setupstream',{name:input.title.slice(0,80),type:3,bitrate:this.profile.kbps+128,accessibility:1,mode:1,viewer_limit:0,audio:1}));
+      const result=await publication.done;
+      if(generation!==this.generation)return;
+      if(result.error)throw result.error;
+      this.stream=publication.id;this.clearPublication(publication);
+      this.state='playing';this.changed();
+    } catch(e) {
+      if(generation===this.generation){
+        try {await this.stop();} catch { /* An uncertain publication retains its lease and late-notification listener. */ }
+        this.error=this.publication?'共享发布结果未确认，请重试停止；仍失败时请重连机器人':e.message;this.changed();
+      }
+      throw e;
+    }
+  }
+  publish(cmd) {
+    const p={id:null,ack:false,settled:false,rejected:false};
+    p.done=new Promise(resolve=>{p.finish=result=>{if(p.settled)return;p.settled=true;clearTimeout(p.timer);resolve(result);};});
+    p.handler=n=>{
+      if(n.name!=='notifystreamstarted'||Number(n.params.clid)!==this.ts.getClientId())return;
+      const id=n.params.id||n.params.stream_id;if(!id||p.id)return;
+      p.id=id;
+      if(p.ack)p.finish({});
+      // A timeout is not proof that setup failed. Retain ownership until a
+      // late successful publication is explicitly stopped or TS disconnects.
+      this.retryPublicationClose(p);
+    };
+    this.publication=p;this.ts.on('rawNotification',p.handler);
+    p.timer=setTimeout(()=>p.finish({error:new Error('TeamSpeak 未确认视频共享')}),this.publicationTimeoutMs);
+    Promise.resolve().then(()=>this.serverStopped?undefined:this.ts.execCommand(cmd)).then(()=>{
+      p.ack=true;if(p.id)p.finish({});
+    },error=>{
+      // Only an explicit protocol rejection proves no share was created.
+      // Network/command timeouts retain ownership until confirmation.
+      p.rejected=error instanceof ServerError&&!p.id;
+      p.finish({error});if(p.rejected)this.retryPublicationClose(p);
+    });
+    return p;
+  }
+  retryPublicationClose(p) {
+    if(this.state==='stopping')void (async()=>{
+      await this.stopTask?.catch(()=>{});
+      if(this.publication===p)await this.stop();
+    })().catch(()=>{});
+  }
+  clearPublication(p) {
+    if(!p)return;
+    clearTimeout(p.timer);this.ts.off('rawNotification',p.handler);
+    if(this.publication===p)this.publication=null;
   }
   pause(paused) {
     if(this.isLive)throw new Error('直播不支持暂停；请停止共享，再次播放会回到实时画面');
@@ -69,7 +104,7 @@ export class VideoSession {
     this.state=paused?'paused':'playing';this.changed();
   }
   stop(serverStopped=false) {
-    if(serverStopped)this.serverStopped=true;
+    if(serverStopped){this.serverStopped=true;this.publication?.finish({});}
     if(this.stopTask)return this.stopTask;
     this.stopTask=this.closeStream().finally(()=>{this.stopTask=null;});
     return this.stopTask;
@@ -98,13 +133,16 @@ export class VideoSession {
   }
   async closeStream() {
     this.recoveryTask=null;
-    ++this.generation;const stream=this.stream;
+    ++this.generation;const publication=this.publication;
     const source=this.source;this.source=null;
     const peers=[...this.viewers.values()];this.viewers.clear();
-    this.state=stream?'stopping':'idle';this.changed();
+    this.state=(this.stream||publication)?'stopping':'idle';this.changed();
     if(source?.process)source.process.kill('SIGCONT');
     const cleanup=Promise.allSettled([source?.stop(),...peers.map(async v=>{clearTimeout(v.timeout);v.remove();await v.pc.close();})]);
     try {
+      if(publication&&!this.serverStopped)await publication.done;
+      const stream=this.stream||publication?.id;
+      if(publication&&!stream&&!publication.rejected&&!this.serverStopped)throw new Error('共享发布结果未确认，请重试停止；仍失败时请重连机器人');
       if(stream&&!this.serverStopped)await this.ts.execCommand(command('stopstream',{id:stream,reason:1}));
     } catch(error) {
       if(!this.serverStopped) {
@@ -115,6 +153,7 @@ export class VideoSession {
       }
     }
     await cleanup;
+    this.clearPublication(publication);
     this.stream=null;this.state='idle';this.title='';this.profile=null;this.isLive=false;
     if(owner===this)owner=null;
     this.changed();
@@ -124,6 +163,9 @@ export class VideoSession {
     this.viewers.delete(clid);clearTimeout(v.timeout);v.remove();await v.pc.close();this.changed();
   }
   async handle({name,params:p}) {
+    if(name==='notifystreamstopped'&&(p.id||p.stream_id)&&(p.id||p.stream_id)===(this.stream||this.publication?.id)){
+      await this.stop(true);return;
+    }
     if(!this.stream||(p.id||p.stream_id)!==this.stream)return;
     this.diagnostics.lastNotification=name;const clid=Number(p.clid);
     if(name!=="notifystreamsignaling")this.diagnostics.lastRequest={name,clientId:clid,remove:p.is_remove||"0"};

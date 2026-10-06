@@ -28,6 +28,7 @@ RUN npm run build
 # Install production dependencies (with native addons compiled) in the builder
 # so we don't need build tools in the production image.
 RUN rm -rf node_modules && npm ci --production && npm cache clean --force
+RUN node scripts/patch-video-sdk.mjs
 
 # --- Stage 2: Production image ---
 FROM node:22-slim
@@ -46,6 +47,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/scripts/patch-video-sdk.mjs ./scripts/patch-video-sdk.mjs
+RUN node scripts/patch-video-sdk.mjs --check
 # package.json declares a `prestart` preflight, so `npm start` inside the
 # container needs this file. The image's own CMD calls node directly and never
 # goes through npm, but an interactive `docker exec ... npm start` would
